@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<configuration>
+  <!-- Traccar Configuration for Fleet Telemetry Platform -->
+  <!-- Used as Protocol Decoder only, no data storage -->
+
+  <!-- Database: Use dummy in-memory database (decoder doesn't need persistence) -->
+  <entry key='database.driver'>org.h2.Driver</entry>
+  <entry key='database.url'>jdbc:h2:mem:traccar;TRACE_LEVEL_SYSTEM_OUT=3;DB_CLOSE_DELAY=-1</entry>
+  <entry key='database.user'>sa</entry>
+  <entry key='database.password'></entry>
+
+  <!-- Web interface: disabled -->
+  <entry key='web.enable'>true</entry>
+  <entry key='web.port'>8082</entry>
+  <entry key='web.address'>0.0.0.0</entry>
+
+  <!-- Logger -->
+  <entry key='logger.level'>info</entry>
+  <entry key='logger.file'>/opt/traccar/logs/traccar.log</entry>
+
+  <!-- Protocols: Enable Teltonika (FMC003) protocol decoder -->
+  <entry key='teltonika.port'>5055</entry>
+
+  <!-- Webhook: Output decoded events to NATS adapter -->
+  <entry key='event.enable'>true</entry>
+  <entry key='forceSecure'>false</entry>
+
+  <!-- Event handler: Send all position updates via webhook to L4 service -->
+  <entry key='notificators.types'>web</entry>
+  
+  <!-- Position attributes: capture all available fields -->
+  <entry key='attributes.enable'>true</entry>
+
+  <!-- Server -->
+  <entry key='server.port'>8082</entry>
+  <entry key='server.address'>0.0.0.0</entry>
+
+  <!-- Disable unnecessary modules for local dev -->
+  <entry key='geocoder.enable'>false</entry>
+  <entry key='geolocation.enable'>false</entry>
+  <entry key='speedLimit.enable'>false</entry>
+  <entry key='stats.enable'>true</entry>
+
+</configuration>

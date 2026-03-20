@@ -1,0 +1,245 @@
+version: "3.8"
+
+services:
+  # L1 Device Simulator (optional, profiles: ["simulate"])
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: fleet-simulator
+    depends_on:
+      emqx:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: emqx
+      MQTT_PORT: 1883
+      MQTT_PROTOCOL: mqtt
+    networks:
+      - fleet-network
+    profiles:
+      - simulate
+    restart: unless-stopped
+
+  # L2 Transport: EMQX MQTT Broker
+  emqx:
+    image: emqx/emqx:5.3.0
+    container_name: fleet-emqx
+    ports:
+      - "1883:1883"    # MQTT plain (local dev)
+      - "8883:8883"    # MQTT over TLS (production)
+      - "18083:18083"  # Admin dashboard
+    volumes:
+      - ./data/emqx:/opt/emqx/data
+      - ./config/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+    networks:
+      - fleet-network
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # L3 Ingestion: Traccar (Protocol Decoder only)
+  traccar:
+    image: traccar/traccar:latest
+    container_name: fleet-traccar
+    depends_on:
+      emqx:
+        condition: service_healthy
+    ports:
+      - "5055:5055"    # Teltonika protocol input
+      - "8082:8082"    # Web UI + webhook output
+    environment:
+      TRACCAR_DB_DRIVER: com.mysql.jdbc.Driver
+      TRACCAR_DB_URL: jdbc:mysql://localhost:3306/traccar
+      TRACCAR_DB_USER: root
+      TRACCAR_DB_PASSWORD: 12345
+    volumes:
+      - ./data/traccar:/opt/traccar/data
+      - ./config/traccar/traccar.xml:/opt/traccar/conf/traccar.xml:ro
+    networks:
+      - fleet-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # L3 Message Queue: NATS JetStream
+  nats:
+    image: nats:2.10-alpine
+    container_name: fleet-nats
+    depends_on:
+      emqx:
+        condition: service_healthy
+    ports:
+      - "4222:4222"    # Client connections
+      - "8222:8222"    # Monitoring HTTP
+    command: [
+      "--js",
+      "-c",
+      "/etc/nats/nats.conf"
+    ]
+    volumes:
+      - ./data/nats:/data/nats
+      - ./config/nats/nats.conf:/etc/nats/nats.conf:ro
+    networks:
+      - fleet-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/varz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # L3 Bridge: MQTT to NATS Adapter
+  adapter:
+    build:
+      context: ./adapter
+      dockerfile: Dockerfile
+    container_name: fleet-adapter
+    depends_on:
+      emqx:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: emqx
+      MQTT_PORT: 1883
+      MQTT_PROTOCOL: mqtt
+      NATS_URL: nats://nats:4222
+    networks:
+      - fleet-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # L4 Processing: TimescaleDB (Time-series database)
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: fleet-timescaledb
+    depends_on:
+      nats:
+        condition: service_healthy
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: fleet
+      POSTGRES_USER: fleet
+      POSTGRES_PASSWORD: fleet
+      POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=timescaledb"
+    volumes:
+      - ./data/timescaledb:/var/lib/postgresql/data
+      - ./init/timescaledb/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    networks:
+      - fleet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleet -d fleet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # L4 Processing: Node.js Service
+  l4-service:
+    image: l4-service:latest  # Build locally or from your registry
+    container_name: fleet-l4-service
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    ports:
+      - "3000:3000"    # REST API
+      - "3001:3001"    # WebSocket
+    environment:
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgresql://fleet:fleet@timescaledb:5432/fleet
+      PORT: 3000
+      WS_PORT: 3001
+      NODE_ENV: development
+    networks:
+      - fleet-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    profiles:
+      - with-service
+
+  # L5 Presentation: Odoo 17
+  odoo:
+    image: odoo:17
+    container_name: fleet-odoo
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+      l4-service:
+        condition: service_healthy
+        required: false
+    ports:
+      - "8069:8069"    # Web UI
+      - "8072:8072"    # WebSocket/longpolling
+    environment:
+      HOST: odoo-db
+      PORT: 5433
+      USER: odoo
+      PASSWORD: odoo
+      ADDONS_PATH: /mnt/extra-addons
+    volumes:
+      - ./data/odoo:/var/lib/odoo
+    networks:
+      - fleet-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8069"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    profiles:
+      - with-odoo
+
+  # L5 Presentation: Odoo PostgreSQL Database
+  odoo-db:
+    image: postgres:15
+    container_name: fleet-odoo-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: odoo
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+    volumes:
+      - ./data/odoo-db:/var/lib/postgresql/data
+    networks:
+      - fleet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d odoo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    profiles:
+      - with-odoo
+
+networks:
+  fleet-network:
+    driver: bridge
+    name: fleet-network
+
+volumes: {}
