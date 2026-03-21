@@ -85,6 +85,26 @@ Full pipeline validated:
 
 ---
 
+## What We Added During This Setup
+
+To make onboarding easy and CI stable, we implemented:
+
+- Local one-command pipeline script: `demo.ps1`
+- Local reset script: `demo-reset.ps1`
+- GitHub Actions smoke pipeline: `.github/workflows/smoke-demo.yml`
+
+Key reliability fixes applied:
+
+- Adapter startup race condition fixed (reliable MQTT subscription)
+- Adapter now ensures NATS `TELEMETRY` stream exists before publish
+- EMQX switched to environment-based config in Compose (no mounted `emqx.conf` in runtime path)
+- NATS command/config corrected for Compose and CI
+- TimescaleDB schema fixed for hypertable constraints
+- CI bind-mount permissions hardened (`data/*` prepared and chmod in workflow)
+- CI teardown hardened to include simulator profile and tolerate cleanup leftovers
+
+---
+
 ## Run It
 
 **One-command demo pipeline (recommended for cloners):**
