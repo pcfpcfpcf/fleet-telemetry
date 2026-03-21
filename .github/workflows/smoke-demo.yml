@@ -1,0 +1,98 @@
+name: Demo Smoke Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Start core services
+        run: |
+          docker compose up -d emqx nats timescaledb adapter
+
+      - name: Wait for core services to be healthy
+        run: |
+          set -euo pipefail
+          services=(emqx nats timescaledb adapter)
+          timeout_secs=240
+          elapsed=0
+
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            all_healthy=true
+            for svc in "${services[@]}"; do
+              cid=$(docker compose ps -q "$svc")
+              if [ -z "$cid" ]; then
+                all_healthy=false
+                break
+              fi
+              status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+              if [ "$status" != "healthy" ]; then
+                all_healthy=false
+                break
+              fi
+            done
+
+            if [ "$all_healthy" = true ]; then
+              echo "All core services are healthy"
+              exit 0
+            fi
+
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "Core services failed to reach healthy state in time"
+          docker compose ps
+          docker compose logs --tail 120 emqx nats timescaledb adapter || true
+          exit 1
+
+      - name: Start simulator profile
+        run: |
+          docker compose --profile simulate up -d simulator
+
+      - name: Wait for simulator traffic
+        run: |
+          sleep 40
+
+      - name: Validate adapter forwarding evidence
+        run: |
+          set -euo pipefail
+          logs=$(docker logs fleet-adapter --tail 1200 2>&1 || true)
+          echo "$logs" | tail -n 120
+
+          for device in FMC003_SIM_001 FMC003_SIM_002 FMC003_SIM_003 FMC003_SIM_004 FMC003_SIM_005; do
+            echo "$logs" | grep -q "$device"
+          done
+
+          echo "$logs" | grep -q "NATS"
+
+      - name: Validate NATS monitor endpoint
+        run: |
+          docker exec fleet-nats wget -qO- http://localhost:8222/jsz | head -c 300
+
+      - name: Dump status and key logs
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs --tail 120 emqx nats adapter timescaledb simulator || true
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose down -v

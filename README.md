@@ -87,6 +87,24 @@ Full pipeline validated:
 
 ## Run It
 
+**One-command demo pipeline (recommended for cloners):**
+```powershell
+.\demo.ps1
+```
+
+This script automatically:
+- Starts emqx, nats, timescaledb, adapter
+- Waits for healthy state
+- Starts simulator
+- Verifies all 5 mock vehicles are forwarded to NATS
+
+**Clean reset helper:**
+```powershell
+.\demo-reset.ps1
+```
+
+Or run manually:
+
 **Start core services:**
 ```powershell
 docker compose up -d emqx nats timescaledb adapter
