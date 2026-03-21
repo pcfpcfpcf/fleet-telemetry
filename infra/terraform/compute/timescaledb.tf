@@ -85,12 +85,12 @@ resource "aws_instance" "timescaledb" {
   tags = merge(
     var.common_tags,
     {
-      Name                = "${var.instance_name_prefix}-timescaledb"
-      Service             = "timescaledb"
-      InstanceType        = "r5.xlarge"
-      vCPU                = "4"
-      RAM                 = "32GB"
-      Role                = "database"
+      Name         = "${var.instance_name_prefix}-timescaledb"
+      Service      = "timescaledb"
+      InstanceType = "r5.xlarge"
+      vCPU         = "4"
+      RAM          = "32GB"
+      Role         = "database"
     }
   )
 
@@ -101,9 +101,9 @@ resource "aws_instance" "timescaledb" {
 
 # Attach the data volume to the TimescaleDB instance
 resource "aws_volume_attachment" "timescaledb_data" {
-  device_name             = "/dev/sdf"
-  volume_id              = var.timescaledb_volume_id
-  instance_id            = aws_instance.timescaledb.id
+  device_name                    = "/dev/sdf"
+  volume_id                      = var.timescaledb_volume_id
+  instance_id                    = aws_instance.timescaledb.id
   stop_instance_before_detaching = true
 }
 

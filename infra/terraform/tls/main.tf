@@ -33,11 +33,11 @@ resource "aws_acmpca_certificate_authority" "root" {
 
     # Root CA subject
     subject {
-      common_name = "${var.project_name}-root-ca"
-      country     = "TN"              # Tunisia
-      state       = "Tunis"
-      locality    = "Tunis"
-      organization = "Mobily"
+      common_name         = "${var.project_name}-root-ca"
+      country             = "TN" # Tunisia
+      state               = "Tunis"
+      locality            = "Tunis"
+      organization        = "Mobily"
       organizational_unit = "Fleet Operations"
     }
   }
@@ -64,7 +64,7 @@ resource "aws_acmpca_certificate_authority" "root" {
 # Allows automated issuance of device certificates
 
 locals {
-  device_certificate_validity_days = 365  # 12 months
+  device_certificate_validity_days = 365 # 12 months
 }
 
 # S3 bucket for exported CA certificate
@@ -116,14 +116,14 @@ resource "aws_s3_bucket_versioning" "ca_certs" {
 
 locals {
   device_certificate_template = {
-    common_name = "FMC003-*"
-    country     = "TN"
-    state       = "Tunis"
-    organization = "Mobily"
-    ou          = "Fleet Devices"
-    key_usage   = ["digitalSignature", "keyEncipherment"]
+    common_name        = "FMC003-*"
+    country            = "TN"
+    state              = "Tunis"
+    organization       = "Mobily"
+    ou                 = "Fleet Devices"
+    key_usage          = ["digitalSignature", "keyEncipherment"]
     extended_key_usage = ["clientAuth"]
-    validity_days = 365
+    validity_days      = 365
   }
 }
 
@@ -152,7 +152,7 @@ output "device_certificate_validity_days" {
 }
 
 output "ca_setup_notes" {
-  value = <<-EOT
+  value       = <<-EOT
     Certificate Authority Setup Complete
 
     Root CA Information:

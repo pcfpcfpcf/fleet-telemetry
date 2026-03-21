@@ -71,12 +71,12 @@ resource "aws_instance" "l4" {
   tags = merge(
     var.common_tags,
     {
-      Name                = "${var.instance_name_prefix}-l4"
-      Service             = "l4"
-      InstanceType        = "t3.large"
-      vCPU                = "2"
-      RAM                 = "8GB"
-      Role                = "processing"
+      Name         = "${var.instance_name_prefix}-l4"
+      Service      = "l4"
+      InstanceType = "t3.large"
+      vCPU         = "2"
+      RAM          = "8GB"
+      Role         = "processing"
     }
   )
 

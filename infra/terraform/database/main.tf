@@ -47,13 +47,13 @@ resource "aws_ebs_volume" "timescaledb" {
   size              = 500
   type              = "gp3"
   encrypted         = true
-  iops              = 3000  # Baseline: 3000 IOPS
-  throughput        = 125   # Baseline: 125 MB/s
+  iops              = 3000 # Baseline: 3000 IOPS
+  throughput        = 125  # Baseline: 125 MB/s
 
   tags = merge(
     var.common_tags,
     {
-      Name = "${var.project_name}-timescaledb-data-${var.environment}"
+      Name      = "${var.project_name}-timescaledb-data-${var.environment}"
       Retention = "persistent"
     }
   )
@@ -143,7 +143,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "backups" {
     }
 
     expiration {
-      days = 30  # WAL files kept for 30 days
+      days = 30 # WAL files kept for 30 days
     }
   }
 }

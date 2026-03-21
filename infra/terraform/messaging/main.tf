@@ -39,13 +39,13 @@ locals {
       name        = "TELEMETRY"
       description = "Raw telemetry from all devices via Traccar"
       subjects    = ["telemetry.raw.*"]
-      retention   = "86400s"  # 24 hours
+      retention   = "86400s" # 24 hours
       max_age     = 86400
       storage     = "file"
       replicas    = 1
       max_msgs    = 1000000
     }
-    
+
     processed = {
       name        = "PROCESSED"
       description = "Processed telemetry after L4 normalization"
@@ -61,7 +61,7 @@ locals {
       name        = "ALERTS"
       description = "Real-time alerts (speeding, fuel, engine anomalies)"
       subjects    = ["alerts.>"]
-      retention   = "604800s"  # 7 days
+      retention   = "604800s" # 7 days
       max_age     = 604800
       storage     = "file"
       replicas    = 1

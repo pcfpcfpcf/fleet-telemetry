@@ -7,7 +7,7 @@ variable "environment" {
 variable "aws_region" {
   description = "AWS region for infrastructure deployment"
   type        = string
-  default     = "me-south-1"  # Middle East (Bahrain), closest to Saudi Arabia
+  default     = "me-south-1" # Middle East (Bahrain), closest to Saudi Arabia
 }
 
 variable "project_name" {
@@ -61,9 +61,9 @@ variable "tags" {
   description = "Common tags applied to all resources"
   type        = map(string)
   default = {
-    Project     = "fleet-telemetry"
-    ManagedBy   = "terraform"
-    Owner       = "cloud-engineer"
-    Client      = "mobily-fleet-operations"
+    Project   = "fleet-telemetry"
+    ManagedBy = "terraform"
+    Owner     = "cloud-engineer"
+    Client    = "mobily-fleet-operations"
   }
 }

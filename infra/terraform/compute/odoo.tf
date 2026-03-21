@@ -85,13 +85,13 @@ resource "aws_instance" "odoo" {
   tags = merge(
     var.common_tags,
     {
-      Name                = "${var.instance_name_prefix}-odoo"
-      Service             = "odoo"
-      InstanceType        = "t3.xlarge"
-      vCPU                = "4"
-      RAM                 = "16GB"
-      Role                = "presentation"
-      PublicFacing        = "true"
+      Name         = "${var.instance_name_prefix}-odoo"
+      Service      = "odoo"
+      InstanceType = "t3.xlarge"
+      vCPU         = "4"
+      RAM          = "16GB"
+      Role         = "presentation"
+      PublicFacing = "true"
     }
   )
 

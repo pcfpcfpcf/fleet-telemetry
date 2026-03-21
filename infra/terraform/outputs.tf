@@ -88,12 +88,12 @@ output "timescaledb_private_ip" {
 
 output "instance_ids" {
   value = {
-    emqx       = module.compute.emqx_instance_id
-    traccar    = module.compute.traccar_instance_id
-    nats       = module.compute.nats_instance_id
-    l4         = module.compute.l4_instance_id
+    emqx        = module.compute.emqx_instance_id
+    traccar     = module.compute.traccar_instance_id
+    nats        = module.compute.nats_instance_id
+    l4          = module.compute.l4_instance_id
     timescaledb = module.compute.timescaledb_instance_id
-    odoo       = module.compute.odoo_instance_id
+    odoo        = module.compute.odoo_instance_id
   }
   description = "EC2 instance IDs by service"
 }
@@ -141,7 +141,7 @@ output "device_certificate_validity_days" {
 # ====================================
 
 output "architecture_summary" {
-  value = <<-EOT
+  value       = <<-EOT
 
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                    FLEET TELEMETRY PLATFORM - AWS DEPLOYMENT                 ║

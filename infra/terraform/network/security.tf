@@ -44,7 +44,7 @@ resource "aws_security_group_rule" "emqx_inbound_internal" {
   from_port         = 1883
   to_port           = 1883
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.2.0/24"]  # ingestion_subnet_cidr
+  cidr_blocks       = ["10.0.2.0/24"] # ingestion_subnet_cidr
   security_group_id = aws_security_group.emqx.id
   description       = "Internal MQTT from Traccar"
 }
@@ -55,7 +55,7 @@ resource "aws_security_group_rule" "emqx_inbound_dashboard" {
   from_port         = 18083
   to_port           = 18083
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.emqx.id
   description       = "EMQX dashboard from processing subnet"
 }
@@ -66,7 +66,7 @@ resource "aws_security_group_rule" "emqx_outbound_traccar" {
   from_port         = 5055
   to_port           = 5055
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.2.0/24"]  # ingestion_subnet_cidr
+  cidr_blocks       = ["10.0.2.0/24"] # ingestion_subnet_cidr
   security_group_id = aws_security_group.emqx.id
   description       = "Forward MQTT to Traccar decoder"
 }
@@ -106,7 +106,7 @@ resource "aws_security_group_rule" "traccar_inbound_emqx" {
   from_port         = 5055
   to_port           = 5055
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.2.0/24"]  # ingestion_subnet_cidr
+  cidr_blocks       = ["10.0.2.0/24"] # ingestion_subnet_cidr
   security_group_id = aws_security_group.traccar.id
   description       = "GPS data from EMQX"
 }
@@ -117,7 +117,7 @@ resource "aws_security_group_rule" "traccar_inbound_monitoring" {
   from_port         = 8082
   to_port           = 8082
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.traccar.id
   description       = "Traccar web UI from processing subnet"
 }
@@ -128,7 +128,7 @@ resource "aws_security_group_rule" "traccar_outbound_nats" {
   from_port         = 4222
   to_port           = 4222
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.2.0/24"]  # ingestion_subnet_cidr
+  cidr_blocks       = ["10.0.2.0/24"] # ingestion_subnet_cidr
   security_group_id = aws_security_group.traccar.id
   description       = "Publish decoded data to NATS"
 }
@@ -168,7 +168,7 @@ resource "aws_security_group_rule" "nats_inbound_traccar" {
   from_port         = 4222
   to_port           = 4222
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.2.0/24"]  # ingestion_subnet_cidr
+  cidr_blocks       = ["10.0.2.0/24"] # ingestion_subnet_cidr
   security_group_id = aws_security_group.nats.id
   description       = "Stream publish from Traccar"
 }
@@ -179,7 +179,7 @@ resource "aws_security_group_rule" "nats_inbound_l4" {
   from_port         = 4222
   to_port           = 4222
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.nats.id
   description       = "Stream subscribe from L4 Node.js"
 }
@@ -190,7 +190,7 @@ resource "aws_security_group_rule" "nats_inbound_monitoring" {
   from_port         = 8222
   to_port           = 8222
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.nats.id
   description       = "Monitoring/jsz endpoint from processing subnet"
 }
@@ -201,7 +201,7 @@ resource "aws_security_group_rule" "nats_outbound_l4_rest" {
   from_port         = 3000
   to_port           = 3000
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.nats.id
   description       = "Push processed data to L4 REST API"
 }
@@ -241,7 +241,7 @@ resource "aws_security_group_rule" "l4_inbound_nats" {
   from_port         = 4222
   to_port           = 4222
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.2.0/24"]  # ingestion_subnet_cidr
+  cidr_blocks       = ["10.0.2.0/24"] # ingestion_subnet_cidr
   security_group_id = aws_security_group.l4.id
   description       = "Subscribe to NATS streams"
 }
@@ -252,7 +252,7 @@ resource "aws_security_group_rule" "l4_inbound_odoo_rest" {
   from_port         = 3000
   to_port           = 3000
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.4.0/24"]  # presentation_subnet_cidr
+  cidr_blocks       = ["10.0.4.0/24"] # presentation_subnet_cidr
   security_group_id = aws_security_group.l4.id
   description       = "REST API calls from Odoo"
 }
@@ -263,7 +263,7 @@ resource "aws_security_group_rule" "l4_inbound_odoo_websocket" {
   from_port         = 3001
   to_port           = 3001
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.4.0/24"]  # presentation_subnet_cidr
+  cidr_blocks       = ["10.0.4.0/24"] # presentation_subnet_cidr
   security_group_id = aws_security_group.l4.id
   description       = "WebSocket from Odoo for real-time updates"
 }
@@ -274,7 +274,7 @@ resource "aws_security_group_rule" "l4_outbound_timescaledb" {
   from_port         = 5432
   to_port           = 5432
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.l4.id
   description       = "Write processed telemetry to TimescaleDB"
 }
@@ -285,7 +285,7 @@ resource "aws_security_group_rule" "l4_outbound_odoo_https" {
   from_port         = 443
   to_port           = 443
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.4.0/24"]  # presentation_subnet_cidr
+  cidr_blocks       = ["10.0.4.0/24"] # presentation_subnet_cidr
   security_group_id = aws_security_group.l4.id
   description       = "HTTPS to Odoo for API updates"
 }
@@ -325,7 +325,7 @@ resource "aws_security_group_rule" "timescaledb_inbound_l4" {
   from_port         = 5432
   to_port           = 5432
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.timescaledb.id
   description       = "Database writes from L4 Node.js"
 }
@@ -365,7 +365,7 @@ resource "aws_security_group_rule" "odoo_inbound_l4_rest" {
   from_port         = 3000
   to_port           = 3000
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.odoo.id
   description       = "REST API from L4 for data delivery"
 }
@@ -376,7 +376,7 @@ resource "aws_security_group_rule" "odoo_inbound_l4_websocket" {
   from_port         = 3001
   to_port           = 3001
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.odoo.id
   description       = "WebSocket from L4 for real-time updates"
 }
@@ -387,7 +387,7 @@ resource "aws_security_group_rule" "odoo_outbound_l4_rest" {
   from_port         = 3000
   to_port           = 3000
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.odoo.id
   description       = "REST API calls to L4"
 }
@@ -398,7 +398,7 @@ resource "aws_security_group_rule" "odoo_outbound_l4_websocket" {
   from_port         = 3001
   to_port           = 3001
   protocol          = "tcp"
-  cidr_blocks       = ["10.0.3.0/24"]  # processing_subnet_cidr
+  cidr_blocks       = ["10.0.3.0/24"] # processing_subnet_cidr
   security_group_id = aws_security_group.odoo.id
   description       = "WebSocket to L4"
 }
