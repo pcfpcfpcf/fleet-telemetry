@@ -1,0 +1,62 @@
+# Terraform Variables Example
+# Copy this to terraform.tfvars and update with your values
+
+# ====================================================================
+# REQUIRED VARIABLES - Must be provided
+# ====================================================================
+
+# Name of the EC2 key pair to use for SSH access
+# Must already exist in eu-west-1
+key_pair_name = "fleet-telemetry-key"
+
+# TimescaleDB root password - use a strong, random value
+# Minimum 16 characters recommended
+db_password = "SetAStrongPasswordHere123!@#"
+
+# ====================================================================
+# OPTIONAL VARIABLES - Defaults provided below
+# ====================================================================
+
+# Deployment environment - used for naming and tagging
+environment = "production"
+
+# AWS region - me-south-1 (Bahrain) is closest to Saudi Arabia
+aws_region = "me-south-1"
+
+# Project name - prefix for resource names
+project_name = "fleet-telemetry"
+
+# Cloud engineer or operator email for notifications
+owner_email = "cloud-engineer@example.com"
+
+# Number of days to retain raw backups in S3
+backup_retention_days = 90
+
+# Number of days to retain archived backups (2 years)
+backup_archive_retention_days = 730
+
+# Enable termination protection on production instances
+# Set to false for dev/test environments
+instance_termination_protection_enabled = true
+
+# Enable detailed CloudWatch monitoring on EC2 instances
+# Increases CloudWatch costs, useful for troubleshooting
+enable_detailed_monitoring = true
+
+# Common tags applied to ALL resources
+tags = {
+  Project     = "fleet-telemetry"
+  ManagedBy   = "terraform"
+  Owner       = "cloud-engineer"
+  Client      = "mobily-fleet-operations"
+}
+
+# ====================================================================
+# DEPLOYMENT COMMAND
+# ====================================================================
+# terraform apply -var-file=terraform.tfvars
+#
+# Or provide variables inline:
+# terraform apply \
+#   -var="key_pair_name=fleet-telemetry-key" \
+#   -var="db_password=YourSecurePassword123!"
