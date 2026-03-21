@@ -31,7 +31,6 @@ services:
     environment:
       EMQX_LISTENERS__TCP__DEFAULT__BIND: "0.0.0.0:1883"
       EMQX_DASHBOARD__LISTENERS__HTTP__BIND: "0.0.0.0:18083"
-      EMQX_AUTHENTICATION__1__ENABLE: "false"
       EMQX_AUTHORIZATION__NO_MATCH: "allow"
       EMQX_LOG__CONSOLE__LEVEL: "warning"
     volumes:
