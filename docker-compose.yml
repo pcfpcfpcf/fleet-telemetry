@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # L1 Device Simulator (optional, profiles: ["simulate"])
   simulator:
