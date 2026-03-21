@@ -83,6 +83,8 @@ Full pipeline validated:
 - Simulator sends 5 vehicles every 30 seconds continuously
 - TimescaleDB initialized with full schema — ready for writes
 
+Important: this project includes a GitHub Actions workflow runner for automated smoke validation on every push/PR, so pipeline health is continuously verified in CI.
+
 ---
 
 ## What We Added During This Setup
