@@ -4,6 +4,7 @@
 > A complete Docker Compose setup for building and testing the fleet telemetry system locally.
 > Simulates a real-world deployment tracking 20,000 vehicles at 667 messages/second peak.
 
+
 ---
 
 ## Architecture
@@ -94,6 +95,7 @@ To make onboarding easy and CI stable, we implemented:
 - Local one-command pipeline script: `demo.ps1`
 - Local reset script: `demo-reset.ps1`
 - GitHub Actions smoke pipeline: `.github/workflows/smoke-demo.yml`
+- GitHub Actions Terraform validation pipeline: `.github/workflows/terraform-validate.yml`
 
 Key reliability fixes applied:
 
@@ -106,6 +108,24 @@ Key reliability fixes applied:
 - CI teardown hardened to include simulator profile and tolerate cleanup leftovers
 
 ---
+
+## CI/CD Pipelines
+
+![CI](https://github.com/fedibenam/Fleet-Telemetry-Platform_test/actions/workflows/smoke-demo.yml/badge.svg)
+![Terraform Validation](https://github.com/fedibenam/Fleet-Telemetry-Platform_test/actions/workflows/terraform-validate.yml/badge.svg)
+
+This repository uses GitHub Actions to continuously validate both the local runtime pipeline and Terraform infrastructure code.
+
+| Workflow | File | Trigger | Purpose |
+|---|---|---|---|
+| Demo Smoke Pipeline | .github/workflows/smoke-demo.yml | Push, Pull Request, Manual | Starts core Docker services, verifies health, runs simulator traffic, and checks adapter forwarding to NATS |
+| Terraform Validation | .github/workflows/terraform-validate.yml | Push/Pull Request on infra/terraform, Manual | Runs terraform fmt -check, terraform init --backend=false, terraform validate, and dry-run terraform plan |
+
+Validation policy:
+
+- smoke-demo validates runtime integration of EMQX, NATS, Adapter, TimescaleDB, and Simulator
+- terraform-validate blocks malformed or syntactically invalid IaC before merge
+
 
 ## Run It manually :
 
