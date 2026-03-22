@@ -1,5 +1,5 @@
 services:
-  # L1 Device Simulator (optional, profiles: ["simulate"])
+  # L1 Device Simulator (starts by default)
   simulator:
     build:
       context: ./simulator
@@ -14,8 +14,6 @@ services:
       MQTT_PROTOCOL: mqtt
     networks:
       - fleet-network
-    profiles:
-      - simulate
     restart: unless-stopped
 
   # L2 Transport: EMQX MQTT Broker
@@ -64,10 +62,11 @@ services:
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8082 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   # L3 Message Queue: NATS JetStream
