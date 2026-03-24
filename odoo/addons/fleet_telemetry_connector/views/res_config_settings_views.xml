@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_fleet_telemetry" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.fleet.telemetry</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app string="Fleet Telemetry" name="fleet_telemetry_connector">
+                    <block title="Fleet Telemetry L4 Integration">
+                        <setting string="L4 Base URL" help="Base URL used by Odoo to fetch vehicles from L4.">
+                            <field name="fleet_l4_base_url"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+</odoo>

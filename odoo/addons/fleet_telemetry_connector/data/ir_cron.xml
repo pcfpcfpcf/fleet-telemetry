@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ir_cron_fleet_telemetry_sync" model="ir.cron">
+        <field name="name">Fleet Telemetry Sync</field>
+        <field name="model_id" ref="model_fleet_vehicle_telemetry"/>
+        <field name="state">code</field>
+        <field name="code">model.sync_from_l4()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">minutes</field>
+        <field name="numbercall">-1</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

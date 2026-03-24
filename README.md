@@ -33,7 +33,7 @@
              │ NATS subscription (when L4 is ready)
              ▼
 ┌─────────────────────────┐
-│   L4 Node.js Service    │  Business logic — NOT built yet
+│   L4 Node.js Service    │  Business logic + REST + WebSocket
 │   Port: 3000 / 3001     │  Software Engineer responsibility
 └────────────┬────────────┘
              │ PostgreSQL
@@ -51,8 +51,8 @@
 └─────────────────────────┘
 
 ┌─────────────────────────┐
-│        Odoo 17          │  Fleet manager dashboard
-│        Port: 8069       │  Module not built yet
+│        Odoo 17          │  Fleet manager dashboard + L5 connector module
+│        Port: 8069       │  Connector scaffold available
 └────────────┬────────────┘
              │ PostgreSQL
              ▼
@@ -83,6 +83,9 @@ Full pipeline validated:
 - Adapter bridges EMQX → NATS successfully
 - Simulator sends 5 vehicles every 30 seconds continuously
 - TimescaleDB initialized with full schema — ready for writes
+- L4 consumes telemetry from NATS and persists to TimescaleDB
+- L4 REST endpoints (`/health`, `/vehicles`, `/alerts`) are serving data
+- L4 WebSocket endpoint (`ws://localhost:3001`) streams live events
 
 Important: this project includes a GitHub Actions workflow runner for automated smoke validation on every push/PR, so pipeline health is continuously verified in CI.
 
@@ -123,15 +126,36 @@ This repository uses GitHub Actions to continuously validate both the local runt
 
 Validation policy:
 
-- smoke-demo validates runtime integration of EMQX, NATS, Adapter, TimescaleDB, and Simulator
+- smoke-demo validates end-to-end integration of Simulator, EMQX, Adapter, NATS, TimescaleDB, and L4 REST/WebSocket paths
 - terraform-validate blocks malformed or syntactically invalid IaC before merge
+
+---
+
+## L5 Odoo Connector (New)
+
+A starter Odoo module is now included at `odoo/addons/fleet_telemetry_connector`.
+
+What it does:
+
+- Fetches vehicle snapshots from L4 endpoint `/vehicles`
+- Stores/upserts records in Odoo model `fleet.vehicle.telemetry`
+- Provides Vehicles list and detail views in Odoo
+- Adds a scheduled sync job (every minute)
+- Adds settings field to configure L4 base URL
+
+To use it:
+
+1. Start Odoo profile with `docker compose --profile with-odoo up -d odoo odoo-db`
+2. Open Odoo on `http://localhost:8069`
+3. Install app `Fleet Telemetry Connector`
+4. Open Fleet Telemetry > Vehicles and run refresh
 
 
 ## Run It manually :
 
 **Start core services:**
 ```powershell
-docker compose up -d emqx nats timescaledb adapter
+docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator
 ```
 
 **Confirm everything is healthy:**
@@ -139,12 +163,7 @@ docker compose up -d emqx nats timescaledb adapter
 docker compose ps
 ```
 
-Expected: all four services show `Up (healthy)`
-
-**Start the GPS simulator:**
-```powershell
-docker compose --profile simulate up -d simulator
-```
+Expected: core services show `Up (healthy)`
 
 **Watch live data flow:**
 ```powershell
@@ -163,7 +182,7 @@ docker compose down
 ```powershell
 docker compose down
 Remove-Item -Recurse -Force ".\data\timescaledb\*"
-docker compose up -d emqx nats timescaledb adapter
+docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator
 ```
 
 ---
@@ -176,9 +195,9 @@ docker compose up -d emqx nats timescaledb adapter
 | EMQX → NATS data pipeline | Cloud Engineer | ✅ Done |
 | GPS device simulator | Cloud Engineer | ✅ Done |
 | TimescaleDB schema | Cloud Engineer | ✅ Done |
-| L4 Node.js processing service | Software Engineer | ⏳ Pending |
-| TimescaleDB writes | Software Engineer | ⏳ Waiting on L4 |
-| Odoo fleet module | Software Engineer | ⏳ Pending |
+| L4 Node.js processing service | Software Engineer | ✅ Done |
+| TimescaleDB writes | Software Engineer | ✅ Done |
+| Odoo fleet module | Software Engineer | 🚧 In Progress (L5 connector scaffolded) |
 
 ---
 
@@ -187,9 +206,8 @@ docker compose up -d emqx nats timescaledb adapter
 - TLS encryption (production concern)
 - Device authentication (production concern)
 - Cloud deployment — AWS infrastructure via Terraform (next phase)
-- L4 business logic and alert rules (Software Engineer)
-- Odoo fleet dashboard (Software Engineer)
+- Advanced Odoo dashboards/maps and real-time UX polish
 
 ---
 
-*Last updated: March 21, 2026 — Infrastructure ready, pipeline validated to NATS*
+*Last updated: March 24, 2026 — L1-L4 validated, L5 Odoo connector scaffolded*

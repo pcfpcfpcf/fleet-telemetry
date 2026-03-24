@@ -193,12 +193,13 @@ services:
       - "8072:8072"    # WebSocket/longpolling
     environment:
       HOST: odoo-db
-      PORT: 5433
+      PORT: 5432
       USER: odoo
       PASSWORD: odoo
-      ADDONS_PATH: /mnt/extra-addons
+      ADDONS_PATH: /usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
     volumes:
       - ./data/odoo:/var/lib/odoo
+      - ./odoo/addons:/mnt/extra-addons
     networks:
       - fleet-network
     healthcheck:
