@@ -8,6 +8,7 @@ on:
     branches:
       - main
       - master
+      - testing
   pull_request:
   workflow_dispatch:
 
