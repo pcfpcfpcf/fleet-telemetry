@@ -89,6 +89,18 @@ jobs:
 
           echo "$logs" | grep -q "NATS"
 
+      - name: Validate TimescaleDB schema readiness
+        run: |
+          set -euo pipefail
+          table_count=$(docker exec fleet-timescaledb psql -U fleet -d fleet -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='telemetry';")
+          echo "telemetry table count: $table_count"
+
+          if [ "${table_count:-0}" -lt 1 ]; then
+            echo "Telemetry table was not initialized"
+            docker compose logs --tail 200 timescaledb || true
+            exit 1
+          fi
+
       - name: Validate L4 health and vehicles API
         run: |
           set -euo pipefail
