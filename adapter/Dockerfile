@@ -2,6 +2,9 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# curl is used by docker-compose healthcheck.
+RUN apk add --no-cache curl
+
 # Copy package files
 COPY package*.json ./
 

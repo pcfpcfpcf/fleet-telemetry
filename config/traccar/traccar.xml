@@ -1,18 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
 <properties>
-  <comment>Traccar Configuration</comment>
 
-  <entry key="database.driver">org.h2.Driver</entry>
-  <entry key="database.url">jdbc:h2:mem:traccar;DB_CLOSE_DELAY=-1</entry>
-  <entry key="database.user">sa</entry>
-  <entry key="database.password"></entry>
+    <entry key="config.default">./conf/default.xml</entry>
 
-  <entry key="web.address">0.0.0.0</entry>
-  <entry key="web.port">8082</entry>
-  <entry key="teltonika.port">5055</entry>
-  <entry key="logger.level">info</entry>
+    <!-- Database: H2 embedded, no external DB needed -->
+    <entry key="database.driver">org.h2.Driver</entry>
+    <entry key="database.url">jdbc:h2:/opt/traccar/data/database</entry>
+    <entry key="database.user">sa</entry>
+    <entry key="database.password"></entry>
 
-  <entry key="event.forward.enable">true</entry>
-  <entry key="event.forward.url">http://adapter:3000/events</entry>
+    <!-- Webhook: forward every decoded event to the Adapter -->
+    <entry key="event.forwardUrl">http://adapter:3000/events</entry>
+
 </properties>

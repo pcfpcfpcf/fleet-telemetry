@@ -51,22 +51,17 @@ services:
     ports:
       - "5055:5055"    # Teltonika protocol input
       - "8082:8082"    # Web UI + webhook output
-    environment:
-      TRACCAR_DB_DRIVER: com.mysql.jdbc.Driver
-      TRACCAR_DB_URL: jdbc:mysql://localhost:3306/traccar
-      TRACCAR_DB_USER: root
-      TRACCAR_DB_PASSWORD: 12345
     volumes:
       - ./data/traccar:/opt/traccar/data
       - ./config/traccar/traccar.xml:/opt/traccar/conf/traccar.xml:ro
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8082 || exit 1"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     restart: unless-stopped
 
   # L3 Message Queue: NATS JetStream
@@ -115,11 +110,11 @@ services:
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD", "node", "-e", "console.log('ok')"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -155,7 +150,9 @@ services:
 
   # L4 Processing: Node.js Service
   l4-service:
-    image: l4-service:latest  # Build locally or from your registry
+    build:
+      context: ./l4-service
+      dockerfile: Dockerfile
     container_name: fleet-l4-service
     depends_on:
       timescaledb:
@@ -180,8 +177,6 @@ services:
       retries: 5
       start_period: 20s
     restart: unless-stopped
-    profiles:
-      - with-service
 
   # L5 Presentation: Odoo 17
   odoo:

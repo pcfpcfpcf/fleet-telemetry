@@ -12,6 +12,8 @@
  */
 
 const mqtt = require('mqtt');
+const express = require('express');
+const { randomUUID } = require('crypto');
 const { connect, StringCodec } = require('nats');
 
 // Configuration from environment
@@ -132,6 +134,11 @@ async function startAdapter() {
   let jetstream;
   let jetstreamManager;
 
+  const publishToNats = async (event) => {
+    const natsSubject = `telemetry.raw.${event.device_id}`;
+    await jetstream.publish(natsSubject, sc.encode(JSON.stringify(event)));
+  };
+
   try {
     natsConnection = await connect({
       servers: [NATS_URL],
@@ -161,6 +168,57 @@ async function startAdapter() {
     console.error('[ERROR] Failed to connect to NATS:', err.message);
     process.exit(1);
   }
+
+  // HTTP server for health and Traccar webhook ingestion.
+  const app = express();
+  app.use(express.json());
+
+  app.get('/health', (_req, res) => {
+    res.status(200).json({ status: 'ok', ts: new Date().toISOString() });
+  });
+
+  app.post('/events', async (req, res) => {
+    try {
+      const raw = req.body;
+      if (!raw?.device?.uniqueId || !raw?.position) {
+        return res.status(400).json({ error: 'missing device or position' });
+      }
+
+      const event = {
+        event_id: randomUUID(),
+        device_id: raw.device.uniqueId,
+        timestamp: raw.position.fixTime || new Date().toISOString(),
+        received_at: new Date().toISOString(),
+        position: {
+          lat: raw.position.latitude ?? null,
+          lng: raw.position.longitude ?? null,
+          altitude: raw.position.altitude ?? null,
+          accuracy: raw.position.accuracy ?? null,
+          bearing: raw.position.course ?? null,
+          speed: raw.position.speed ?? null,
+        },
+        telemetry: {
+          ignition: raw.position.attributes?.ignition ?? null,
+          fuel_level: raw.position.attributes?.fuel ?? null,
+          odometer: raw.position.attributes?.odometer ?? null,
+          rpm: raw.position.attributes?.rpm ?? null,
+          engine_load: raw.position.attributes?.engineLoad ?? null,
+        },
+        io_events: [],
+        buffered: false,
+      };
+
+      await publishToNats(event);
+      return res.status(200).json({ ok: true, event_id: event.event_id });
+    } catch (err) {
+      console.error('[ERROR] POST /events failed:', err.message);
+      return res.status(500).json({ error: 'internal error' });
+    }
+  });
+
+  app.listen(3000, () => {
+    console.log('[ADAPTER] HTTP server listening on :3000');
+  });
 
   // Connect to MQTT after NATS is ready
   const mqttUrl = `${MQTT_PROTOCOL}://${MQTT_HOST}:${MQTT_PORT}`;
@@ -230,8 +288,7 @@ async function startAdapter() {
       }
 
       // Publish to NATS
-      const natsSubject = `telemetry.raw.${event.device_id}`;
-      await jetstream.publish(natsSubject, sc.encode(eventString));
+      await publishToNats(event);
 
       validCount++;
 
