@@ -180,3 +180,135 @@ jobs:
           docker rm -f fleet-simulator >/dev/null 2>&1 || true
           docker network rm fleet-network >/dev/null 2>&1 || true
           true
+
+  odoo-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Show Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Prepare writable bind-mount directories
+        run: |
+          set -euo pipefail
+          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db
+          chmod -R 777 data
+          ls -ld data data/*
+
+      - name: Start services for Odoo integration test
+        run: |
+          docker compose --profile with-odoo up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db
+
+      - name: Wait for core and Odoo DB services to be healthy
+        run: |
+          set -euo pipefail
+          services=(emqx traccar nats timescaledb adapter l4-service odoo-db)
+          timeout_secs=420
+          elapsed=0
+
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            all_healthy=true
+            for svc in "${services[@]}"; do
+              cid=$(docker compose ps -q "$svc")
+              if [ -z "$cid" ]; then
+                all_healthy=false
+                break
+              fi
+              status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+              if [ "$status" != "healthy" ]; then
+                all_healthy=false
+                break
+              fi
+            done
+
+            if [ "$all_healthy" = true ]; then
+              echo "All required services are healthy"
+              exit 0
+            fi
+
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "Services failed to reach healthy state in time"
+          docker compose ps
+          docker compose logs --tail 120 emqx nats timescaledb adapter l4-service odoo-db || true
+          exit 1
+
+      - name: Initialize Odoo database and install connector
+        run: |
+          set -euo pipefail
+          docker compose run --rm odoo odoo -d odoo -i base --without-demo=all --stop-after-init
+          docker compose run --rm odoo odoo -d odoo -u fleet_telemetry_connector --stop-after-init
+
+      - name: Start Odoo web service
+        run: |
+          docker compose --profile with-odoo up -d odoo
+
+      - name: Wait for Odoo to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=240
+          elapsed=0
+
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose ps -q odoo)
+            if [ -n "$cid" ]; then
+              status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+              if [ "$status" = "healthy" ]; then
+                echo "Odoo is healthy"
+                exit 0
+              fi
+            fi
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "Odoo did not become healthy"
+          docker compose logs --tail 200 odoo || true
+          exit 1
+
+      - name: Verify Odoo telemetry data is synced
+        run: |
+          set -euo pipefail
+
+          timeout_secs=240
+          elapsed=0
+
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            count=$(docker exec fleet-odoo-db psql -U odoo -d odoo -Atc "select count(*) from fleet_vehicle_telemetry;" || echo 0)
+            echo "Odoo telemetry row count: $count"
+
+            if [ "${count:-0}" -gt 0 ]; then
+              echo "Odoo telemetry sync verified"
+              exit 0
+            fi
+
+            sleep 10
+            elapsed=$((elapsed + 10))
+          done
+
+          echo "No telemetry rows were synced to Odoo in time"
+          docker compose logs --tail 200 odoo || true
+          exit 1
+
+      - name: Dump status and key logs
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs --tail 120 emqx traccar nats adapter timescaledb l4-service odoo odoo-db simulator || true
+
+      - name: Teardown
+        if: always()
+        run: |
+          set +e
+          docker compose --profile with-odoo down -v --remove-orphans
+          docker rm -f fleet-simulator >/dev/null 2>&1 || true
+          docker network rm fleet-network >/dev/null 2>&1 || true
+          true

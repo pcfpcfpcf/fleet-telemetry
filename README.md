@@ -7,6 +7,52 @@
 
 ---
 
+## Fresh Clone Quickstart (Everything Visible)
+
+For a new developer cloning this repository, use this flow to get all services up and immediately see telemetry in Odoo.
+
+Note: this quickstart is for onboarding and UI checks. The CI pipeline remains the quality gate for merge/release decisions.
+
+Prerequisites:
+
+- Docker Desktop running
+- Git installed
+- PowerShell 5+ (Windows)
+
+1. Clone and open the repo
+
+```powershell
+git clone https://github.com/fedibenam/Fleet-Telemetry-Platform_test.git
+cd Fleet-Telemetry-Platform_test
+```
+
+2. Run one command bootstrap
+
+```powershell
+.\scripts\bootstrap-all.ps1
+```
+
+3. Open Odoo and log in
+
+- URL: `http://localhost:8069`
+- Database: `odoo`
+- User: `admin`
+- Password: `admin`
+
+4. Open Fleet Telemetry list view
+
+- `http://localhost:8069/web#action=87&model=fleet.vehicle.telemetry&view_type=list&cids=1&menu_id=70`
+
+What this script does:
+
+- Starts L1-L4 services (simulator, EMQX, NATS, adapter, TimescaleDB, L4)
+- Starts Odoo + Odoo DB
+- Initializes Odoo base database (idempotent)
+- Installs/upgrades `fleet_telemetry_connector`
+- Restarts Odoo and prints final service status
+
+---
+
 ## Architecture
 
 ```
@@ -122,11 +168,13 @@ This repository uses GitHub Actions to continuously validate both the local runt
 | Workflow | File | Trigger | Purpose |
 |---|---|---|---|
 | Demo Smoke Pipeline | .github/workflows/smoke-demo.yml | Push, Pull Request, Manual | Starts core Docker services, verifies health, runs simulator traffic, and checks adapter forwarding to NATS |
+| Odoo Integration Smoke | .github/workflows/smoke-demo.yml | Push, Pull Request, Manual | Initializes Odoo DB, installs connector module, runs sync from L4, and verifies telemetry rows in Odoo |
 | Terraform Validation | .github/workflows/terraform-validate.yml | Push/Pull Request on infra/terraform, Manual | Runs terraform fmt -check, terraform init --backend=false, terraform validate, and dry-run terraform plan |
 
 Validation policy:
 
 - smoke-demo validates end-to-end integration of Simulator, EMQX, Adapter, NATS, TimescaleDB, and L4 REST/WebSocket paths
+- odoo-smoke validates end-to-end L4 to L5 presentation path (Odoo DB init, connector install, sync, and fleet rows)
 - terraform-validate blocks malformed or syntactically invalid IaC before merge
 
 ---
