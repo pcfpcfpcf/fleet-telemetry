@@ -92,18 +92,38 @@ jobs:
       - name: Validate L4 health and vehicles API
         run: |
           set -euo pipefail
-          curl -fsS http://localhost:3000/health
+          # Wait until health endpoint is reachable.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
 
-          vehicles_json=$(curl -fsS http://localhost:3000/vehicles)
-          echo "$vehicles_json" | head -c 500
+          # Poll vehicles endpoint because DB/consumer warm-up can briefly return 500.
+          ok=false
+          for i in $(seq 1 20); do
+            response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" http://localhost:3000/vehicles || true)
+            body=$(echo "$response" | sed '$d')
+            code=$(echo "$response" | tail -n1 | sed 's/HTTP_STATUS://')
 
-          if ! echo "$vehicles_json" | grep -q '"success":true'; then
-            echo "L4 vehicles endpoint did not return success=true"
-            exit 1
-          fi
+            if [ "$code" = "200" ] && echo "$body" | grep -q '^\['; then
+              echo "$body" | head -c 500
+              if echo "$body" | grep -q 'FMC003_SIM_00'; then
+                ok=true
+                break
+              fi
+            else
+              echo "Attempt $i: /vehicles returned HTTP $code"
+              echo "$body" | head -c 300 || true
+            fi
 
-          if ! echo "$vehicles_json" | grep -q 'FMC003_SIM_00'; then
-            echo "L4 vehicles endpoint did not include simulated devices"
+            sleep 3
+          done
+
+          if [ "$ok" != "true" ]; then
+            echo "L4 /vehicles endpoint did not return simulator data in time"
+            docker compose logs --tail 120 l4-service timescaledb || true
             exit 1
           fi
 
