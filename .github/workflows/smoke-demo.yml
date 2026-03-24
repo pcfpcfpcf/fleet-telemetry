@@ -14,7 +14,7 @@ on:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -32,15 +32,15 @@ jobs:
           chmod -R 777 data
           ls -ld data data/*
 
-      - name: Start core services
+      - name: Start full telemetry stack (L1-L4)
         run: |
-          docker compose up -d emqx nats timescaledb adapter
+          docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator
 
-      - name: Wait for core services to be healthy
+      - name: Wait for services to be healthy
         run: |
           set -euo pipefail
-          services=(emqx nats timescaledb adapter)
-          timeout_secs=240
+          services=(emqx traccar nats timescaledb adapter l4-service)
+          timeout_secs=360
           elapsed=0
 
           while [ "$elapsed" -lt "$timeout_secs" ]; do
@@ -72,13 +72,9 @@ jobs:
           docker compose logs --tail 120 emqx nats timescaledb adapter || true
           exit 1
 
-      - name: Start simulator profile
-        run: |
-          docker compose --profile simulate up -d simulator
-
       - name: Wait for simulator traffic
         run: |
-          sleep 40
+          sleep 60
 
       - name: Validate adapter forwarding evidence
         run: |
@@ -92,6 +88,47 @@ jobs:
 
           echo "$logs" | grep -q "NATS"
 
+      - name: Validate L4 health and vehicles API
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:3000/health
+
+          vehicles_json=$(curl -fsS http://localhost:3000/vehicles)
+          echo "$vehicles_json" | head -c 500
+
+          if ! echo "$vehicles_json" | grep -q '"success":true'; then
+            echo "L4 vehicles endpoint did not return success=true"
+            exit 1
+          fi
+
+          if ! echo "$vehicles_json" | grep -q 'FMC003_SIM_00'; then
+            echo "L4 vehicles endpoint did not include simulated devices"
+            exit 1
+          fi
+
+      - name: Validate telemetry persisted in TimescaleDB
+        run: |
+          set -euo pipefail
+          count=$(docker exec fleet-timescaledb psql -U fleet -d fleet -Atc "select count(*) from telemetry;")
+          echo "Telemetry row count: $count"
+
+          if [ "${count:-0}" -le 0 ]; then
+            echo "No telemetry rows found in TimescaleDB"
+            exit 1
+          fi
+
+      - name: Validate WebSocket telemetry broadcast
+        shell: pwsh
+        run: |
+          $output = pwsh -NoProfile -File ./scripts/ws-test.ps1 -Url "ws://localhost:3001" -DurationSeconds 15 | Out-String
+          Write-Host $output
+          if ($output -notmatch "CONNECTED") {
+            throw "WebSocket did not connect"
+          }
+          if ($output -notmatch "MESSAGE") {
+            throw "WebSocket did not receive telemetry messages"
+          }
+
       - name: Validate NATS monitor endpoint
         run: |
           docker exec fleet-nats wget -qO- http://localhost:8222/jsz | head -c 300
@@ -100,13 +137,13 @@ jobs:
         if: always()
         run: |
           docker compose ps
-          docker compose logs --tail 120 emqx nats adapter timescaledb simulator || true
+          docker compose logs --tail 120 emqx traccar nats adapter timescaledb l4-service simulator || true
 
       - name: Teardown
         if: always()
         run: |
           set +e
-          docker compose --profile simulate down -v --remove-orphans
+          docker compose down -v --remove-orphans
           docker rm -f fleet-simulator >/dev/null 2>&1 || true
           docker network rm fleet-network >/dev/null 2>&1 || true
           true
