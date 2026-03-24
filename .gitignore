@@ -7,6 +7,9 @@
 /backups/
 *.sql
 *.sql.gz
+!/init/
+!/init/timescaledb/
+!/init/timescaledb/01_schema.sql
 
 # Local development
 .env.local
