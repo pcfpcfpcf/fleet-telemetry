@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from urllib import error, request
 
 from odoo import api, fields, models
@@ -67,7 +68,7 @@ class FleetVehicleTelemetry(models.Model):
                 "speed": item.get("speed"),
                 "fuel_level": item.get("fuel_level"),
                 "ignition": item.get("ignition") if item.get("ignition") is not None else False,
-                "timestamp": item.get("timestamp"),
+                "timestamp": self._to_odoo_datetime(item.get("timestamp")),
                 "payload": json.dumps(item),
             }
 
@@ -80,6 +81,22 @@ class FleetVehicleTelemetry(models.Model):
 
         _logger.info("Synced %s vehicles from L4", upserted)
         return upserted
+
+    @api.model
+    def _to_odoo_datetime(self, raw_ts):
+        if not raw_ts:
+            return False
+
+        if isinstance(raw_ts, datetime):
+            return fields.Datetime.to_string(raw_ts)
+
+        try:
+            normalized = str(raw_ts).replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+            return fields.Datetime.to_string(parsed)
+        except (TypeError, ValueError):
+            _logger.warning("Invalid timestamp from L4: %s", raw_ts)
+            return False
 
     def action_refresh_from_l4(self):
         self.sync_from_l4()
