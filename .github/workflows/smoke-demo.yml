@@ -291,20 +291,21 @@ jobs:
           docker compose ps
           docker compose logs --tail 50 timescaledb || true
 
-      - name: Debug fleet-odoo-db before table wait
+
+      - name: Debug odoo-db before table wait
         run: |
-          echo "Checking fleet-odoo-db container status..."
+          echo "Checking odoo-db container status..."
           docker compose ps
-          docker compose logs --tail 100 fleet-odoo-db || true
+          docker compose logs --tail 100 odoo-db || true
 
       - name: Wait for fleet_vehicle_telemetry table
         run: |
           echo "Waiting for fleet_vehicle_telemetry table..."
-          cid=$(docker compose ps -q fleet-odoo-db)
+          cid=$(docker compose ps -q odoo-db)
           if [ -z "$cid" ]; then
-            echo "Error: fleet-odoo-db container not found"
+            echo "Error: odoo-db container not found"
             docker compose ps
-            docker compose logs --tail 100 fleet-odoo-db || true
+            docker compose logs --tail 100 odoo-db || true
             exit 1
           fi
 
@@ -318,7 +319,7 @@ jobs:
           done
 
           echo "Table did not appear in time"
-          docker compose logs --tail 100 fleet-odoo-db
+          docker compose logs --tail 100 odoo-db
           exit 1
 
       - name: Verify Odoo telemetry data is synced
@@ -329,7 +330,7 @@ jobs:
           elapsed=0
 
           while [ "$elapsed" -lt "$timeout_secs" ]; do
-            count=$(docker exec fleet-odoo-db psql -U odoo -d odoo -Atc "select count(*) from fleet_vehicle_telemetry;" || echo 0)
+            count=$(docker exec odoo-db psql -U odoo -d odoo -Atc "select count(*) from fleet_vehicle_telemetry;" || echo 0)
             echo "Odoo telemetry row count: $count"
 
             if [ "${count:-0}" -gt 0 ]; then
