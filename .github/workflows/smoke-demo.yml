@@ -247,6 +247,10 @@ jobs:
           docker compose run --rm odoo odoo -d odoo -i base --without-demo=all --stop-after-init
           docker compose run --rm odoo odoo -d odoo -u fleet_telemetry_connector --stop-after-init
 
+      - name: Dump Odoo logs after module install
+        run: |
+          docker compose logs odoo --tail=200
+
       - name: Start Odoo web service
         run: |
           docker compose --profile with-odoo up -d odoo
