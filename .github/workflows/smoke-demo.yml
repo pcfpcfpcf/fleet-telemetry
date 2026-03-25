@@ -284,18 +284,34 @@ jobs:
           docker compose logs --tail 200 odoo || true
           exit 1
 
+      - name: Debug fleet-odoo-db before table wait
+        run: |
+          echo "Checking fleet-odoo-db container status..."
+          docker compose ps
+          docker compose logs --tail 100 fleet-odoo-db || true
+
       - name: Wait for fleet_vehicle_telemetry table
         run: |
           echo "Waiting for fleet_vehicle_telemetry table..."
+          cid=$(docker compose ps -q fleet-odoo-db)
+          if [ -z "$cid" ]; then
+            echo "Error: fleet-odoo-db container not found"
+            docker compose ps
+            docker compose logs --tail 100 fleet-odoo-db || true
+            exit 1
+          fi
+
           for i in {1..30}; do
-            if docker compose exec -T fleet-odoo-db psql -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
+            if docker exec -T "$cid" psql -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
               echo "Table exists."
               exit 0
             fi
             echo "Table not ready yet... retrying"
             sleep 2
           done
+
           echo "Table did not appear in time"
+          docker compose logs --tail 100 fleet-odoo-db
           exit 1
 
       - name: Verify Odoo telemetry data is synced
