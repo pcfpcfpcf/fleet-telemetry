@@ -43,6 +43,31 @@ jobs:
         run: |
           docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator
 
+      - name: Wait for timescaledb to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=120
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose ps -q timescaledb)
+            if [ -z "$cid" ]; then
+              echo "timescaledb container not found"
+              docker compose ps
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "timescaledb is healthy"
+              exit 0
+            fi
+            echo "Waiting for timescaledb to be healthy..."
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "timescaledb did not become healthy in time"
+          docker compose logs --tail 100 timescaledb
+          exit 1
+
       - name: Wait for services to be healthy
         run: |
           set -euo pipefail
