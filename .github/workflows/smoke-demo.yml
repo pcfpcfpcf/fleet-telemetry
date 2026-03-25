@@ -343,10 +343,14 @@ jobs:
               exit 0
             fi
             echo "Table not ready yet... retrying"
+            docker exec -T "$cid" psql -h odoo-db -U odoo -d odoo -c "\dt" || true
             sleep 2
           done
 
           echo "Table did not appear in time"
+          echo "Current tables in database (from odoo container):"
+          docker exec -T "$cid" psql -h odoo-db -U odoo -d odoo -c "\dt" || true
+          echo "Odoo logs:"
           docker compose logs --tail 100 odoo
           exit 1
 
