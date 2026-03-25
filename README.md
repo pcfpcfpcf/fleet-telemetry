@@ -259,3 +259,6 @@ docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator
 ---
 
 *Last updated: March 24, 2026 — L1-L4 validated, L5 Odoo connector scaffolded*
+T r i g g e r   C I   p i p e l i n e   0 3 / 2 5 / 2 0 2 6   1 9 : 5 4 : 3 7  
+ T r i g g e r   C I   p i p e l i n e   0 3 / 2 5 / 2 0 2 6   1 9 : 5 5 : 2 0  
+ 
