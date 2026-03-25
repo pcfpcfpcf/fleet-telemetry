@@ -46,7 +46,7 @@ jobs:
       - name: Wait for timescaledb to be healthy
         run: |
           set -euo pipefail
-          timeout_secs=120
+          timeout_secs=300
           elapsed=0
           while [ "$elapsed" -lt "$timeout_secs" ]; do
             cid=$(docker compose ps -q timescaledb)
@@ -60,11 +60,14 @@ jobs:
               echo "timescaledb is healthy"
               exit 0
             fi
-            echo "Waiting for timescaledb to be healthy..."
+            echo "Waiting for timescaledb to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose logs --tail 20 timescaledb || true
             sleep 5
             elapsed=$((elapsed + 5))
           done
           echo "timescaledb did not become healthy in time"
+          docker inspect "$cid" || true
           docker compose logs --tail 100 timescaledb
           exit 1
 
