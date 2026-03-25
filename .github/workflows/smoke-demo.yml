@@ -294,6 +294,29 @@ jobs:
           set -euo pipefail
           timeout_secs=240
           elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose ps -q odoo)
+            if [ -z "$cid" ]; then
+              echo "Odoo container not found"
+              docker compose ps
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "Odoo is healthy"
+              exit 0
+            fi
+            echo "Waiting for Odoo to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose logs --tail 40 odoo || true
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "Odoo did not become healthy"
+          docker inspect "$cid" || true
+          docker compose logs --tail 200 odoo
+          exit 1
+          elapsed=0
 
           while [ "$elapsed" -lt "$timeout_secs" ]; do
             cid=$(docker compose ps -q odoo)
