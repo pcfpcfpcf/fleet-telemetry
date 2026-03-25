@@ -209,12 +209,12 @@ jobs:
 
       - name: Start services for Odoo integration test
         run: |
-          docker compose --profile with-odoo up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db
+          docker compose --profile with-odoo up -d emqx traccar nats fleet-timescaledb adapter l4-service simulator odoo-db
 
       - name: Wait for core and Odoo DB services to be healthy
         run: |
           set -euo pipefail
-          services=(emqx traccar nats timescaledb adapter l4-service odoo-db)
+          services=(emqx traccar nats fleet-timescaledb adapter l4-service odoo-db)
           timeout_secs=420
           elapsed=0
 
@@ -283,6 +283,13 @@ jobs:
           echo "Odoo did not become healthy"
           docker compose logs --tail 200 odoo || true
           exit 1
+
+
+      - name: Debug fleet-timescaledb before table wait
+        run: |
+          echo "Checking fleet-timescaledb container status..."
+          docker compose ps
+          docker compose logs --tail 50 fleet-timescaledb || true
 
       - name: Debug fleet-odoo-db before table wait
         run: |
