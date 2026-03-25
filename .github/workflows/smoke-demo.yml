@@ -297,8 +297,14 @@ jobs:
           while [ "$elapsed" -lt "$timeout_secs" ]; do
             cid=$(docker compose ps -q odoo)
             if [ -z "$cid" ]; then
-              echo "Odoo container not found"
+              echo "Odoo container not found. Debugging context:"
+              echo "Current directory: $(pwd)"
+              echo "Listing all containers (docker ps -a):"
+              docker ps -a
+              echo "docker compose ps output:"
               docker compose ps
+              echo "docker compose config services:"
+              docker compose config --services
               exit 1
             fi
             status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
