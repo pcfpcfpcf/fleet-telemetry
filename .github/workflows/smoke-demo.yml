@@ -288,7 +288,7 @@ jobs:
         run: |
           echo "Waiting for fleet_vehicle_telemetry table..."
           for i in {1..30}; do
-            if docker compose exec -T odoo-db psql -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
+            if docker compose exec -T fleet-odoo-db psql -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
               echo "Table exists."
               exit 0
             fi
