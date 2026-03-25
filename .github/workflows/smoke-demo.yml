@@ -237,7 +237,7 @@ jobs:
 
       - name: Start services for Odoo integration test
         run: |
-          docker compose --profile with-odoo up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db
+          docker compose --profile with-odoo up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db odoo
 
       - name: Wait for core and Odoo DB services to be healthy
         run: |
