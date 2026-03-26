@@ -237,7 +237,49 @@ jobs:
 
       - name: Start services for Odoo integration test
         run: |
-          docker compose --profile with-odoo up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db odoo
+          docker compose --profile with-odoo up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db
+
+      - name: Wait for Odoo DB to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=120
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose --profile with-odoo ps -q odoo-db)
+            if [ -z "$cid" ]; then
+              echo "odoo-db container not found"
+              docker compose --profile with-odoo ps
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "odoo-db is healthy"
+              exit 0
+            fi
+            echo "Waiting for odoo-db to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose --profile with-odoo logs --tail 20 odoo-db || true
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "odoo-db did not become healthy in time"
+          docker inspect "$cid" || true
+          docker compose --profile with-odoo logs --tail 100 odoo-db
+          exit 1
+
+      - name: Initialize Odoo database and install connector
+        run: |
+          set -euo pipefail
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -i base --without-demo=all --stop-after-init
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -u fleet_telemetry_connector --stop-after-init
+          echo "Listing installed Odoo modules after install:"
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -c "import odoo; odoo.tools.config['addons_path'] = '/mnt/extra-addons'; from odoo.modules.registry import Registry; r = Registry('odoo'); print([m for m in r._init_modules])" || true
+          echo "Listing all tables in odoo database after install:"
+          docker compose --profile with-odoo run --rm odoo psql -h odoo-db -U odoo -d odoo -c "\\dt" || true
+
+      - name: Start Odoo service
+        run: |
+          docker compose --profile with-odoo up -d odoo
 
       - name: Wait for core and Odoo DB services to be healthy
         run: |
