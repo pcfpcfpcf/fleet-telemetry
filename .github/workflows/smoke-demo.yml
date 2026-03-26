@@ -433,32 +433,26 @@ jobs:
           echo "Checking odoo-db container status..."
           docker compose ps
           docker compose logs --tail 100 odoo-db || true
+          echo "Listing tables in odoo-db via fleet-odoo-db container:"
+          docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
 
 
       - name: Wait for fleet_vehicle_telemetry table
         run: |
-          echo "Waiting for fleet_vehicle_telemetry table (from odoo container)..."
-          cid=$(docker compose --profile with-odoo ps -q odoo)
-          if [ -z "$cid" ]; then
-            echo "Error: odoo container not found"
-            docker compose ps
-            docker compose logs --tail 100 odoo || true
-            exit 1
-          fi
-
+          echo "Waiting for fleet_vehicle_telemetry table (from fleet-odoo-db container)..."
           for i in {1..60}; do
-            if docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
+            if docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
               echo "Table exists."
               exit 0
             fi
             echo "Table not ready yet... retrying ($i/60)"
-            docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" || true
+            docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
             sleep 5
           done
 
           echo "Table did not appear in time"
-          echo "Current tables in database (from odoo container):"
-          docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" || true
+          echo "Current tables in database (from fleet-odoo-db container):"
+          docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
           echo "Odoo logs:"
           docker compose logs --tail 200 odoo
           echo "Odoo-db logs:"
