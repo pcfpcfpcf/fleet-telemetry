@@ -1,0 +1,24 @@
+{
+  "name": "fleet-telemetry-simulator",
+  "version": "1.0.0",
+  "description": "GPS device simulator for Fleet Telemetry Platform local development",
+  "main": "simulator.js",
+  "scripts": {
+    "start": "node simulator.js"
+  },
+  "keywords": [
+    "gps",
+    "telemetry",
+    "mqtt",
+    "simulator"
+  ],
+  "author": "Cloud Engineer",
+  "license": "MIT",
+  "dependencies": {
+    "mqtt": "^5.3.0",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

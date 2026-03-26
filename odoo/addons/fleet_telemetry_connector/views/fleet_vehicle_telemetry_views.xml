@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fleet_vehicle_telemetry_tree" model="ir.ui.view">
+        <field name="name">fleet.vehicle.telemetry.tree</field>
+        <field name="model">fleet.vehicle.telemetry</field>
+        <field name="arch" type="xml">
+            <tree string="Fleet Telemetry" default_order="timestamp desc">
+                <field name="device_id"/>
+                <field name="timestamp"/>
+                <field name="latitude"/>
+                <field name="longitude"/>
+                <field name="speed"/>
+                <field name="fuel_level"/>
+                <field name="ignition"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_fleet_vehicle_telemetry_form" model="ir.ui.view">
+        <field name="name">fleet.vehicle.telemetry.form</field>
+        <field name="model">fleet.vehicle.telemetry</field>
+        <field name="arch" type="xml">
+            <form string="Vehicle Telemetry">
+                <header>
+                    <button name="action_refresh_from_l4" string="Refresh from L4" type="object" class="btn-primary"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="device_id"/>
+                            <field name="timestamp"/>
+                            <field name="ignition"/>
+                        </group>
+                        <group>
+                            <field name="speed"/>
+                            <field name="fuel_level"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group>
+                            <field name="latitude"/>
+                            <field name="longitude"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Raw Payload">
+                            <field name="payload" nolabel="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_fleet_vehicle_telemetry" model="ir.actions.act_window">
+        <field name="name">Fleet Telemetry</field>
+        <field name="res_model">fleet.vehicle.telemetry</field>
+        <field name="view_mode">tree,form</field>
+        <field name="context">{'search_default_order_by_timestamp': 1}</field>
+    </record>
+
+    <menuitem id="menu_fleet_telemetry_root" name="Fleet Telemetry" sequence="10"/>
+    <menuitem id="menu_fleet_telemetry_vehicles" name="Vehicles" parent="menu_fleet_telemetry_root" action="action_fleet_vehicle_telemetry" sequence="10"/>
+</odoo>

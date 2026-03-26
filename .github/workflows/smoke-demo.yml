@@ -1,0 +1,499 @@
+name: Demo Smoke Pipeline
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - testing
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Show Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Prepare writable bind-mount directories
+        run: |
+          set -euo pipefail
+          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db
+          chmod -R 777 data
+          ls -ld data data/*
+
+      - name: Clean timescaledb data directory (force fresh DB)
+        run: |
+          set -euo pipefail
+          if [ -d data/timescaledb ]; then
+            rm -rf data/timescaledb/*
+            echo "Cleaned data/timescaledb for fresh TimescaleDB init"
+          else
+            mkdir -p data/timescaledb
+            echo "Created data/timescaledb directory"
+          fi
+
+      - name: Start TimescaleDB only
+        run: |
+          docker compose up -d timescaledb
+
+      - name: Wait for TimescaleDB to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=180
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose ps -q timescaledb)
+            if [ -z "$cid" ]; then
+              echo "timescaledb container not found"
+              docker compose ps
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "timescaledb is healthy"
+              exit 0
+            fi
+            echo "Waiting for timescaledb to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose logs --tail 20 timescaledb || true
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "timescaledb did not become healthy in time"
+          docker inspect "$cid" || true
+          docker compose logs --tail 100 timescaledb
+          exit 1
+
+      - name: Start remaining telemetry stack (L1-L4)
+        run: |
+          docker compose up -d emqx traccar nats adapter l4-service simulator
+
+      - name: Wait for timescaledb to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=300
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose ps -q timescaledb)
+            if [ -z "$cid" ]; then
+              echo "timescaledb container not found"
+              docker compose ps
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "timescaledb is healthy"
+              exit 0
+            fi
+            echo "Waiting for timescaledb to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose logs --tail 20 timescaledb || true
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "timescaledb did not become healthy in time"
+          docker inspect "$cid" || true
+          docker compose logs --tail 100 timescaledb
+          exit 1
+
+      - name: Wait for services to be healthy
+        run: |
+          set -euo pipefail
+          services=(emqx traccar nats timescaledb adapter l4-service)
+          timeout_secs=360
+          elapsed=0
+
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            all_healthy=true
+            for svc in "${services[@]}"; do
+              cid=$(docker compose ps -q "$svc")
+              if [ -z "$cid" ]; then
+                all_healthy=false
+                break
+              fi
+              status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+              if [ "$status" != "healthy" ]; then
+                all_healthy=false
+                break
+              fi
+            done
+
+            if [ "$all_healthy" = true ]; then
+              echo "All core services are healthy"
+              exit 0
+            fi
+
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "Core services failed to reach healthy state in time"
+          docker compose ps
+          docker compose logs --tail 120 emqx nats timescaledb adapter || true
+          exit 1
+
+      - name: Wait for simulator traffic
+        run: |
+          sleep 60
+
+      - name: Validate adapter forwarding evidence
+        run: |
+          set -euo pipefail
+          logs=$(docker logs fleet-adapter --tail 1200 2>&1 || true)
+          echo "$logs" | tail -n 120
+
+          for device in FMC003_SIM_001 FMC003_SIM_002 FMC003_SIM_003 FMC003_SIM_004 FMC003_SIM_005; do
+            echo "$logs" | grep -q "$device"
+          done
+
+          echo "$logs" | grep -q "NATS"
+
+      - name: Validate TimescaleDB schema readiness
+        run: |
+          set -euo pipefail
+          table_count=$(docker exec fleet-timescaledb psql -U fleet -d fleet -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='telemetry';")
+          echo "telemetry table count: $table_count"
+
+          if [ "${table_count:-0}" -lt 1 ]; then
+            echo "Telemetry table was not initialized"
+            docker compose logs --tail 200 timescaledb || true
+            exit 1
+          fi
+
+      - name: Validate L4 health and vehicles API
+        run: |
+          set -euo pipefail
+          # Wait until health endpoint is reachable.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+
+          # Poll vehicles endpoint because DB/consumer warm-up can briefly return 500.
+          ok=false
+          for i in $(seq 1 20); do
+            response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" http://localhost:3000/vehicles || true)
+            body=$(echo "$response" | sed '$d')
+            code=$(echo "$response" | tail -n1 | sed 's/HTTP_STATUS://')
+
+            if [ "$code" = "200" ] && echo "$body" | grep -q '^\['; then
+              echo "$body" | head -c 500
+              if echo "$body" | grep -q 'FMC003_SIM_00'; then
+                ok=true
+                break
+              fi
+            else
+              echo "Attempt $i: /vehicles returned HTTP $code"
+              echo "$body" | head -c 300 || true
+            fi
+
+            sleep 3
+          done
+
+          if [ "$ok" != "true" ]; then
+            echo "L4 /vehicles endpoint did not return simulator data in time"
+            docker compose logs --tail 120 l4-service timescaledb || true
+            exit 1
+          fi
+
+      - name: Validate telemetry persisted in TimescaleDB
+        run: |
+          set -euo pipefail
+          count=$(docker exec fleet-timescaledb psql -U fleet -d fleet -Atc "select count(*) from telemetry;")
+          echo "Telemetry row count: $count"
+
+          if [ "${count:-0}" -le 0 ]; then
+            echo "No telemetry rows found in TimescaleDB"
+            exit 1
+          fi
+
+      - name: Validate WebSocket telemetry broadcast
+        shell: pwsh
+        run: |
+          $output = pwsh -NoProfile -File ./scripts/ws-test.ps1 -Url "ws://localhost:3001" -DurationSeconds 15 | Out-String
+          Write-Host $output
+          if ($output -notmatch "CONNECTED") {
+            throw "WebSocket did not connect"
+          }
+          if ($output -notmatch "MESSAGE") {
+            throw "WebSocket did not receive telemetry messages"
+          }
+
+      - name: Validate NATS monitor endpoint
+        run: |
+          docker exec fleet-nats wget -qO- http://localhost:8222/jsz | head -c 300
+
+      - name: Dump status and key logs
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs --tail 120 emqx traccar nats adapter timescaledb l4-service simulator || true
+
+      - name: Teardown
+        if: always()
+        run: |
+          set +e
+          docker compose down -v --remove-orphans
+          docker rm -f fleet-simulator >/dev/null 2>&1 || true
+          docker network rm fleet-network >/dev/null 2>&1 || true
+          true
+
+  odoo-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Show Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Prepare writable bind-mount directories
+        run: |
+          set -euo pipefail
+          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db
+          chmod -R 777 data
+          ls -ld data data/*
+
+      - name: Start services for Odoo integration test
+        run: |
+          docker compose --profile with-odoo up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db
+
+      - name: Wait for Odoo DB to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=120
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose --profile with-odoo ps -q odoo-db)
+            if [ -z "$cid" ]; then
+              echo "odoo-db container not found"
+              docker compose --profile with-odoo ps
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "odoo-db is healthy"
+              exit 0
+            fi
+            echo "Waiting for odoo-db to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose --profile with-odoo logs --tail 20 odoo-db || true
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "odoo-db did not become healthy in time"
+          docker inspect "$cid" || true
+          docker compose --profile with-odoo logs --tail 100 odoo-db
+          exit 1
+
+      - name: Initialize Odoo database and install connector
+        run: |
+          set -euo pipefail
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -i base --without-demo=all --stop-after-init
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -i fleet_telemetry_connector --stop-after-init
+          echo "Listing installed Odoo modules after install:"
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -c "import odoo; odoo.tools.config['addons_path'] = '/mnt/extra-addons'; from odoo.modules.registry import Registry; r = Registry('odoo'); print([m for m in r._init_modules])" || true
+          echo "Listing all tables in odoo database after install:"
+          docker compose --profile with-odoo run --rm odoo psql -h odoo-db -U odoo -d odoo -c "\\dt" || true
+
+      - name: Start Odoo service
+        run: |
+          docker compose --profile with-odoo up -d odoo
+
+      - name: Wait for core and Odoo DB services to be healthy
+        run: |
+          set -euo pipefail
+          services=(emqx traccar nats timescaledb adapter l4-service odoo-db)
+          timeout_secs=420
+          elapsed=0
+
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            all_healthy=true
+            for svc in "${services[@]}"; do
+              cid=$(docker compose ps -q "$svc")
+              if [ -z "$cid" ]; then
+                all_healthy=false
+                break
+              fi
+              status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+              if [ "$status" != "healthy" ]; then
+                all_healthy=false
+                break
+              fi
+            done
+
+            if [ "$all_healthy" = true ]; then
+              echo "All required services are healthy"
+              exit 0
+            fi
+
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "Services failed to reach healthy state in time"
+          docker compose ps
+          docker compose logs --tail 120 emqx nats timescaledb adapter l4-service odoo-db || true
+          exit 1
+
+      - name: Initialize Odoo database and install connector
+        run: |
+          set -euo pipefail
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -i base --without-demo=all --stop-after-init
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -u fleet_telemetry_connector --stop-after-init
+          echo "Listing installed Odoo modules after install:"
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -c "import odoo; odoo.tools.config['addons_path'] = '/mnt/extra-addons'; from odoo.modules.registry import Registry; r = Registry('odoo'); print([m for m in r._init_modules])" || true
+          echo "Listing all tables in odoo database after install:"
+          docker compose --profile with-odoo run --rm odoo psql -h odoo-db -U odoo -d odoo -c "\\dt" || true
+
+      - name: Restart Odoo web service
+        run: |
+          docker compose --profile with-odoo restart odoo
+
+      - name: Wait for Odoo to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=240
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose --profile with-odoo ps -q odoo)
+            if [ -z "$cid" ]; then
+              echo "Odoo container not found. Debugging context:"
+              echo "Current directory: $(pwd)"
+              echo "Listing all containers (docker ps -a):"
+              docker ps -a
+              echo "docker compose ps output:"
+              docker compose ps
+              echo "docker compose config services:"
+              docker compose config --services
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "Odoo is healthy"
+              exit 0
+            fi
+            echo "Waiting for Odoo to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose logs --tail 40 odoo || true
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "Odoo did not become healthy"
+          docker inspect "$cid" || true
+          docker compose logs --tail 200 odoo
+          exit 1
+          elapsed=0
+
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose --profile with-odoo ps -q odoo)
+            if [ -n "$cid" ]; then
+              status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+              if [ "$status" = "healthy" ]; then
+                echo "Odoo is healthy"
+                exit 0
+              fi
+            fi
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "Odoo did not become healthy"
+          docker compose logs --tail 200 odoo || true
+          exit 1
+
+
+      - name: Debug timescaledb before table wait
+        run: |
+          echo "Checking timescaledb container status..."
+          docker compose ps
+          docker compose logs --tail 50 timescaledb || true
+
+
+      - name: Debug odoo-db before table wait
+        run: |
+          echo "Checking odoo-db container status..."
+          docker compose ps
+          docker compose logs --tail 100 odoo-db || true
+          echo "Listing tables in odoo-db via fleet-odoo-db container:"
+          docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
+
+
+      - name: Wait for fleet_vehicle_telemetry table
+        run: |
+          echo "Waiting for fleet_vehicle_telemetry table (from fleet-odoo-db container)..."
+          for i in {1..60}; do
+            if docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
+              echo "Table exists."
+              exit 0
+            fi
+            echo "Table not ready yet... retrying ($i/60)"
+            docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
+            sleep 5
+          done
+
+          echo "Table did not appear in time"
+          echo "Current tables in database (from fleet-odoo-db container):"
+          docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
+          echo "Odoo logs:"
+          docker compose logs --tail 200 odoo
+          echo "Odoo-db logs:"
+          docker compose logs --tail 100 odoo-db
+          exit 1
+
+      - name: Verify Odoo telemetry data is synced
+        run: |
+          set -euo pipefail
+
+          timeout_secs=240
+          elapsed=0
+
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            count=$(docker exec fleet-odoo-db psql -U odoo -d odoo -Atc "select count(*) from fleet_vehicle_telemetry;" || echo 0)
+            echo "Odoo telemetry row count: $count"
+
+            if [ "${count:-0}" -gt 0 ]; then
+              echo "Odoo telemetry sync verified"
+              exit 0
+            fi
+
+            sleep 10
+            elapsed=$((elapsed + 10))
+          done
+
+          echo "No telemetry rows were synced to Odoo in time"
+          docker compose logs --tail 200 odoo || true
+          exit 1
+
+      - name: Dump status and key logs
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs --tail 120 emqx traccar nats adapter timescaledb l4-service odoo odoo-db simulator || true
+
+      - name: Teardown
+        if: always()
+        run: |
+          set +e
+          docker compose --profile with-odoo down -v --remove-orphans
+          docker rm -f fleet-simulator >/dev/null 2>&1 || true
+          docker network rm fleet-network >/dev/null 2>&1 || true
+          true

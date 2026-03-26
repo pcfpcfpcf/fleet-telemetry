@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+
+    <entry key="config.default">./conf/default.xml</entry>
+
+    <!-- Database: H2 embedded, no external DB needed -->
+    <entry key="database.driver">org.h2.Driver</entry>
+    <entry key="database.url">jdbc:h2:/opt/traccar/data/database</entry>
+    <entry key="database.user">sa</entry>
+    <entry key="database.password"></entry>
+
+    <!-- Webhook: forward every decoded event to the Adapter -->
+    <entry key="event.forwardUrl">http://adapter:3000/events</entry>
+
+</properties>

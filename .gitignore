@@ -1,0 +1,60 @@
+# Data volumes (never commit local data)
+/data/
+/data/*
+!/.gitkeep
+
+# Backups
+/backups/
+*.sql
+*.sql.gz
+!/init/
+!/init/timescaledb/
+!/init/timescaledb/01_schema.sql
+
+# Local development
+.env.local
+.env*.local
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
