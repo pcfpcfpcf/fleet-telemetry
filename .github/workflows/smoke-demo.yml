@@ -467,7 +467,7 @@ jobs:
           elapsed=0
 
           while [ "$elapsed" -lt "$timeout_secs" ]; do
-            count=$(docker exec odoo-db psql -U odoo -d odoo -Atc "select count(*) from fleet_vehicle_telemetry;" || echo 0)
+            count=$(docker exec fleet-odoo-db psql -U odoo -d odoo -Atc "select count(*) from fleet_vehicle_telemetry;" || echo 0)
             echo "Odoo telemetry row count: $count"
 
             if [ "${count:-0}" -gt 0 ]; then
