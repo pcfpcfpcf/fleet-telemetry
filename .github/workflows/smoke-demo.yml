@@ -36,8 +36,13 @@ jobs:
       - name: Clean timescaledb data directory (force fresh DB)
         run: |
           set -euo pipefail
-          rm -rf data/timescaledb/*
-          echo "Cleaned data/timescaledb for fresh TimescaleDB init"
+          if [ -d data/timescaledb ]; then
+            rm -rf data/timescaledb/*
+            echo "Cleaned data/timescaledb for fresh TimescaleDB init"
+          else
+            mkdir -p data/timescaledb
+            echo "Created data/timescaledb directory"
+          fi
 
       - name: Start full telemetry stack (L1-L4)
         run: |
