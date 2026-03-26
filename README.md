@@ -280,7 +280,7 @@ docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator
 | TimescaleDB writes | Software Engineer | ✅ Done |
 | Odoo fleet module | Software Engineer | 🚧 In Progress (L5 connector scaffolded) |
 
-------------
+--------------
 
 
 ## What Is Out of Scope for This Phase
