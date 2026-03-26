@@ -308,7 +308,7 @@ jobs:
         run: |
           set -euo pipefail
           docker compose --profile with-odoo run --rm odoo odoo -d odoo -i base --without-demo=all --stop-after-init
-          docker compose --profile with-odoo run --rm odoo odoo -d odoo -u fleet_telemetry_connector --stop-after-init
+          docker compose --profile with-odoo run --rm odoo odoo -d odoo -i fleet_telemetry_connector --stop-after-init
           echo "Listing installed Odoo modules after install:"
           docker compose --profile with-odoo run --rm odoo odoo -d odoo -c "import odoo; odoo.tools.config['addons_path'] = '/mnt/extra-addons'; from odoo.modules.registry import Registry; r = Registry('odoo'); print([m for m in r._init_modules])" || true
           echo "Listing all tables in odoo database after install:"
@@ -434,6 +434,7 @@ jobs:
           docker compose ps
           docker compose logs --tail 100 odoo-db || true
 
+
       - name: Wait for fleet_vehicle_telemetry table
         run: |
           echo "Waiting for fleet_vehicle_telemetry table (from odoo container)..."
@@ -445,21 +446,23 @@ jobs:
             exit 1
           fi
 
-          for i in {1..30}; do
+          for i in {1..60}; do
             if docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
               echo "Table exists."
               exit 0
             fi
-            echo "Table not ready yet... retrying"
+            echo "Table not ready yet... retrying ($i/60)"
             docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" || true
-            sleep 2
+            sleep 5
           done
 
           echo "Table did not appear in time"
           echo "Current tables in database (from odoo container):"
           docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" || true
           echo "Odoo logs:"
-          docker compose logs --tail 100 odoo
+          docker compose logs --tail 200 odoo
+          echo "Odoo-db logs:"
+          docker compose logs --tail 100 odoo-db
           exit 1
 
       - name: Verify Odoo telemetry data is synced
