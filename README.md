@@ -1,9 +1,49 @@
+
 # Fleet Telemetry Platform
 ### Local Development Environment
 
-> A complete Docker Compose setup for building and testing the fleet telemetry system locally.
-> Simulates a real-world deployment tracking 20,000 vehicles at 667 messages/second peak.
+> A complete, modular Docker Compose stack for simulating, processing, storing, and visualizing vehicle telemetry data. Includes real-time and historical data flows, business logic, and Odoo ERP integration.
 
+---
+
+## How the Platform Works (End-to-End)
+
+**1. Simulator**
+    - Simulates 5 GPS devices, each sending normalized telemetry (position, speed, fuel, etc.) every 30 seconds.
+    - Publishes data via MQTT to the EMQX broker.
+
+**2. EMQX Broker**
+    - Receives MQTT messages from the simulator.
+    - Makes telemetry available for downstream consumption.
+
+**3. Adapter**
+    - Subscribes to EMQX MQTT topics (telemetry/#).
+    - Validates and normalizes events.
+    - Publishes valid events to NATS JetStream (TELEMETRY stream).
+
+**4. NATS JetStream**
+    - Message queue for telemetry events, enabling reliable, decoupled processing.
+
+**5. L4-Service**
+    - Consumes telemetry from NATS.
+    - Persists events to TimescaleDB (hypertable for time-series data).
+    - Exposes REST endpoints (e.g., /vehicles) and WebSocket for real-time data.
+    - Evaluates alerts and broadcasts events to clients.
+
+**6. TimescaleDB**
+    - Stores all telemetry events with efficient time-series queries.
+
+**7. Odoo & Fleet Telemetry Connector**
+    - Odoo ERP runs with its own Postgres DB.
+    - The custom connector module fetches vehicle data from L4-service (/vehicles endpoint).
+    - Syncs and upserts telemetry into Odoo for dashboards and business logic.
+
+**Data Flow Summary:**
+
+Simulator → EMQX (MQTT) → Adapter → NATS → L4-service → TimescaleDB (+ WebSocket/REST) → Odoo (via connector)
+
+**CI/CD:**
+    - GitHub Actions workflow brings up the stack, waits for health, runs integration tests, and validates Odoo sync.
 
 ---
 
@@ -53,6 +93,7 @@ What this script does:
 
 ---
 
+
 ## Architecture
 
 ```
@@ -63,7 +104,6 @@ What this script does:
              ▼
 ┌─────────────────────────┐
 │       EMQX Broker       │  Receives all device connections
-│       Port: 1883        │  Admin UI: 18083
 └────────────┬────────────┘
              │ subscribes to telemetry/#
              ▼
@@ -74,37 +114,30 @@ What this script does:
              ▼
 ┌─────────────────────────┐
 │    NATS JetStream       │  Message queue — 24hr retention
-│    Port: 4222           │  Monitor: 8222
 └────────────┬────────────┘
              │ NATS subscription (when L4 is ready)
              ▼
 ┌─────────────────────────┐
 │   L4 Node.js Service    │  Business logic + REST + WebSocket
-│   Port: 3000 / 3001     │  Software Engineer responsibility
 └────────────┬────────────┘
              │ PostgreSQL
              ▼
 ┌─────────────────────────┐
-│      TimescaleDB        │  Time-series database — ready and waiting
-│      Port: 5432         │
+│      TimescaleDB        │  Time-series database
 └─────────────────────────┘
 
-── optional paths ──────────────────────────────────────────
-
+── optional paths ────────────────
 ┌─────────────────────────┐
 │        Traccar          │  Teltonika binary decoder
-│        Port: 5055       │  Only needed for real FMC003 devices
 └─────────────────────────┘
 
 ┌─────────────────────────┐
 │        Odoo 17          │  Fleet manager dashboard + L5 connector module
-│        Port: 8069       │  Connector scaffold available
 └────────────┬────────────┘
              │ PostgreSQL
              ▼
 ┌─────────────────────────┐
 │     Odoo Database       │  Separate from TimescaleDB
-│     Port: 5433          │
 └─────────────────────────┘
 ```
 
