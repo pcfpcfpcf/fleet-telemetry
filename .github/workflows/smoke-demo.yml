@@ -414,18 +414,18 @@ jobs:
           fi
 
           for i in {1..30}; do
-            if docker exec "$cid" psql -h odoo-db -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
+            if docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
               echo "Table exists."
               exit 0
             fi
             echo "Table not ready yet... retrying"
-            docker exec "$cid" psql -h odoo-db -U odoo -d odoo -c "\dt" || true
+            docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" || true
             sleep 2
           done
 
           echo "Table did not appear in time"
           echo "Current tables in database (from odoo container):"
-          docker exec "$cid" psql -h odoo-db -U odoo -d odoo -c "\dt" || true
+          docker exec "$cid" env PGPASSWORD=odoo psql -h odoo-db -U odoo -d odoo -c "\dt" || true
           echo "Odoo logs:"
           docker compose logs --tail 100 odoo
           exit 1
