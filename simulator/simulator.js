@@ -19,43 +19,19 @@ const MQTT_PROTOCOL = process.env.MQTT_PROTOCOL || 'mqtt';
 const SEND_INTERVAL = 30000; // 30 seconds
 
 // Simulated vehicles - 5 fake devices around Tunis
-const devices = [
-  {
-    device_id: 'FMC003_SIM_001',
-    imei: '352093114305816',
-    name: 'Vehicle Alpha',
-    initialPosition: { lat: 36.8065, lng: 10.1815 }, // City center
-    baseFuel: 100,
-  },
-  {
-    device_id: 'FMC003_SIM_002',
-    imei: '352093114305817',
-    name: 'Vehicle Beta',
-    initialPosition: { lat: 36.7372, lng: 10.2352 }, // South
-    baseFuel: 85,
-  },
-  {
-    device_id: 'FMC003_SIM_003',
-    imei: '352093114305818',
-    name: 'Vehicle Gamma',
-    initialPosition: { lat: 36.8901, lng: 10.1234 }, // North
-    baseFuel: 70,
-  },
-  {
-    device_id: 'FMC003_SIM_004',
-    imei: '352093114305819',
-    name: 'Vehicle Delta',
-    initialPosition: { lat: 36.8200, lng: 10.0800 }, // West
-    baseFuel: 55,
-  },
-  {
-    device_id: 'FMC003_SIM_005',
-    imei: '352093114305820',
-    name: 'Vehicle Epsilon',
-    initialPosition: { lat: 36.8100, lng: 10.3000 }, // East
-    baseFuel: 40,
-  },
-];
+// Generate 50 simulated vehicles around Tunis
+const devices = Array.from({ length: 50 }, (_, i) => {
+  const idx = i + 1;
+  const latBase = 36.8 + (Math.random() - 0.5) * 0.2; // ~Tunis area
+  const lngBase = 10.15 + (Math.random() - 0.5) * 0.25;
+  return {
+    device_id: `FMC003_SIM_${idx.toString().padStart(3, '0')}`,
+    imei: `35209311430${5800 + idx}`,
+    name: `Vehicle ${String.fromCharCode(65 + (idx - 1) % 26)}${idx}`,
+    initialPosition: { lat: latBase, lng: lngBase },
+    baseFuel: Math.round(40 + Math.random() * 60),
+  };
+});
 
 // Vehicle state (position, speed, fuel)
 const vehicleState = {};
