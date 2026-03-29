@@ -58,3 +58,6 @@ logs/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# C
+main
