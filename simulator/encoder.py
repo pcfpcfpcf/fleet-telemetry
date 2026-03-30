@@ -82,7 +82,8 @@ def encode_avl_record(record: Dict) -> bytes:
     )
 
     io_elements = dict(record.get("io_elements", {}))
-    n1, n2, n4, n8 = group_io_elements(io_elements)
+    io_sizes = record.get("io_sizes")
+    n1, n2, n4, n8 = group_io_elements(io_elements, io_sizes=io_sizes)
     total_io = len(n1) + len(n2) + len(n4) + len(n8)
 
     io_bytes = bytearray()

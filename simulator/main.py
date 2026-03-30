@@ -25,11 +25,22 @@ class ControlState:
         self.down = False
         self.left = False
         self.right = False
+        self._toggle_ignition = False
         self._lock = threading.Lock()
 
     def set_key(self, key_name: str, pressed: bool) -> None:
         with self._lock:
             setattr(self, key_name, pressed)
+
+    def request_toggle_ignition(self) -> None:
+        with self._lock:
+            self._toggle_ignition = True
+
+    def consume_toggle_ignition(self) -> bool:
+        with self._lock:
+            requested = self._toggle_ignition
+            self._toggle_ignition = False
+            return requested
 
     def snapshot(self) -> tuple[bool, bool, bool, bool]:
         with self._lock:
@@ -63,6 +74,8 @@ class KeyboardInputLayer:
                 self.controls.set_key("left", True)
             elif key_char == "d":
                 self.controls.set_key("right", True)
+            elif key_char == "i":
+                self.controls.request_toggle_ignition()
 
     def _on_release(self, key) -> None:
         if key == keyboard.Key.up:
@@ -106,7 +119,7 @@ def _on_off(value: bool) -> str:
 
 
 def render_dashboard(
-    record: dict[str, Any],
+    record: dict[str, Any] | None,
     car: Car,
     controls: ControlState,
     ack: int,
@@ -114,6 +127,9 @@ def render_dashboard(
     host: str,
     port: int,
     imei: str,
+    connected: bool,
+    buffered_records: int,
+    next_interval_s: float,
 ) -> None:
     up, down, left, right = controls.snapshot()
     speed = max(0.0, min(120.0, float(car.speed)))
@@ -121,12 +137,18 @@ def render_dashboard(
     filled = int((speed / 120.0) * width)
     bar = "#" * filled + "-" * (width - filled)
 
+    io = record.get("io_elements", {}) if record else {}
+
     print("\x1b[2J\x1b[H", end="")
-    print("+----------------------------------------------------------+")
-    print("|                 TELTONIKA FMC003 SIMULATOR              |")
-    print("+----------------------------------------------------------+")
+    print("+----------------------------------------------------------------+")
+    print("|                   TELTONIKA FMC003 EMULATOR                    |")
+    print("+----------------------------------------------------------------+")
     print(f" Target: {host}:{port}   IMEI: {imei}")
-    print(" Controls: Arrow keys or WASD")
+    print(
+        f" Link: {'CONNECTED' if connected else 'OFFLINE  '}  "
+        f"Buffered: {buffered_records:4d}  Next Tx Interval: {next_interval_s:4.1f}s"
+    )
+    print(" Controls: Arrow keys or WASD, press I to toggle ignition")
     print(
         " Input State: "
         f"UP[{_on_off(up)}] DOWN[{_on_off(down)}] "
@@ -135,43 +157,57 @@ def render_dashboard(
     print("")
     print(f" Speedometer [{bar}] {speed:6.2f} km/h")
     print(f" Heading: {car.angle:6.2f} deg    Ignition: {_on_off(car.ignition)}")
-    print(
-        f" Position: lat={record['latitude']:.6f} lon={record['longitude']:.6f} "
-        f"alt={record['altitude']}m sat={record['satellites']}"
-    )
-    print(
-        f" Packet: {packet_size} bytes  ACK: {ack}  IO: "
-        f"ign={record['io_elements'].get(239)} mov={record['io_elements'].get(240)} "
-        f"spd={record['io_elements'].get(24)} batt={record['io_elements'].get(66)}"
-    )
-    print("+----------------------------------------------------------+")
+
+    if record:
+        print(
+            f" Position: lat={record['latitude']:.6f} lon={record['longitude']:.6f} "
+            f"alt={record['altitude']}m sat={record['satellites']}"
+        )
+        print(
+            f" IO: ign={io.get(239)} mov={io.get(240)} spd={io.get(24)} batt={io.get(66)} "
+            f"rpm={io.get(12)} fuel(0.1%)={io.get(13)} odo(m)={io.get(16)} gsm={io.get(21)}"
+        )
+    else:
+        print(" Position: n/a")
+        print(" IO: n/a")
+
+    print(f" Last packet size: {packet_size} bytes   Last ACK: {ack}")
+    print("+----------------------------------------------------------------+")
     print(" Press Ctrl+C to stop")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Teltonika FMC003 Codec8 TCP simulator")
+    parser = argparse.ArgumentParser(description="Teltonika FMC003 high-fidelity emulator")
     parser.add_argument("--host", default="127.0.0.1", help="TCP server host")
     parser.add_argument("--port", type=int, default=5055, help="TCP server port")
     parser.add_argument("--imei", default="352093114305816", help="15-digit device IMEI")
-    parser.add_argument("--interval", type=float, default=1.0, help="Send interval in seconds")
     parser.add_argument("--latitude", type=float, default=36.8065, help="Initial latitude")
     parser.add_argument("--longitude", type=float, default=10.1815, help="Initial longitude")
     parser.add_argument("--no-gps-noise", action="store_true", help="Disable GPS noise")
     parser.add_argument("--debug", action="store_true", help="Print periodic telemetry debug logs")
     parser.add_argument("--no-ui", action="store_true", help="Disable dashboard and print debug lines only")
+    parser.add_argument("--physics-step", type=float, default=0.1, help="Physics step in seconds")
+    parser.add_argument("--moving-interval", type=float, default=1.0, help="AVL interval while moving")
+    parser.add_argument("--idle-interval", type=float, default=5.0, help="AVL interval while idle")
+    parser.add_argument("--ignition-off-interval", type=float, default=10.0, help="AVL interval while ignition is off")
+    parser.add_argument("--burst-size", type=int, default=5, help="Max buffered records to send per packet")
+    parser.add_argument("--max-buffer", type=int, default=1000, help="Max buffered records kept while offline")
     return parser.parse_args()
 
 
-def apply_controls(car: Car, controls: ControlState) -> None:
+def apply_controls(car: Car, controls: ControlState, dt_seconds: float) -> None:
+    if controls.consume_toggle_ignition():
+        car.toggle_ignition()
+
     up, down, left, right = controls.snapshot()
-    if up:
-        car.accelerate()
+    if up and car.ignition:
+        car.accelerate(amount=18.0 * dt_seconds)
     if down:
-        car.brake()
+        car.brake(amount=26.0 * dt_seconds)
     if left:
-        car.turn_left()
+        car.turn_left(degrees=70.0 * dt_seconds)
     if right:
-        car.turn_right()
+        car.turn_right(degrees=70.0 * dt_seconds)
 
 
 def main() -> int:
@@ -179,65 +215,117 @@ def main() -> int:
 
     if len(args.imei) != 15 or not args.imei.isdigit():
         raise ValueError("IMEI must be a 15-digit numeric string")
+    if args.physics_step <= 0:
+        raise ValueError("physics-step must be > 0")
+    if args.burst_size <= 0:
+        raise ValueError("burst-size must be > 0")
+    if args.max_buffer <= 0:
+        raise ValueError("max-buffer must be > 0")
     if not validate_crc_self_test():
         raise RuntimeError("CRC-16/IBM self-test failed")
 
     car = Car(latitude=args.latitude, longitude=args.longitude, speed=0.0, angle=0.0, ignition=True)
-    device = FMC003(imei=args.imei, car=car)
+    device = FMC003(
+        imei=args.imei,
+        car=car,
+        moving_interval_s=args.moving_interval,
+        idle_interval_s=args.idle_interval,
+        ignition_off_interval_s=args.ignition_off_interval,
+    )
 
     controls = ControlState()
     keyboard_input = KeyboardInputLayer(controls)
     client = TeltonikaTCPClient(host=args.host, port=args.port)
 
+    pending_records: list[dict[str, Any]] = []
+    last_record: dict[str, Any] | None = None
+    connected = False
+    last_ack = 0
+    last_packet_size = 0
+
+    last_tick = time.time()
+    last_record_at = last_tick
+    next_send_at = last_tick
+    next_ui_refresh = last_tick
+
     keyboard_input.start()
     print(
-        "[sim] Keyboard active. Use arrow keys or WASD to drive. "
+        "[sim] Input active. Arrow keys/WASD to drive, I to toggle ignition. "
         f"Target={args.host}:{args.port} IMEI={args.imei}"
     )
 
     try:
-        client.connect_and_login(args.imei)
-        print("[sim] IMEI accepted by server")
-
         while True:
-            tick_start = time.time()
+            loop_start = time.time()
+            dt = max(0.01, loop_start - last_tick)
+            last_tick = loop_start
 
-            apply_controls(car, controls)
-            car.update()
+            apply_controls(car, controls, dt_seconds=dt)
+            car.update(dt_seconds=dt)
 
-            record = device.build_record(add_gps_noise=not args.no_gps_noise)
-            packet = build_codec8_packet([record])
+            if loop_start >= next_send_at:
+                rec_dt = max(0.01, loop_start - last_record_at)
+                last_record = device.build_record(
+                    add_gps_noise=not args.no_gps_noise,
+                    dt_seconds=rec_dt,
+                )
+                last_record_at = loop_start
+                pending_records.append(last_record)
+                if len(pending_records) > args.max_buffer:
+                    pending_records = pending_records[-args.max_buffer:]
+                next_send_at = loop_start + device.tx_interval()
 
-            try:
-                ack = client.send_avl_packet(packet, records_sent=1)
-            except (OSError, TimeoutError, ConnectionError) as exc:
-                print(f"[sim] Network issue ({exc}), reconnecting...")
-                client.connect_and_login(args.imei)
-                ack = client.send_avl_packet(packet, records_sent=1)
+            if pending_records:
+                send_count = min(args.burst_size, len(pending_records))
+                to_send = pending_records[:send_count]
+                packet = build_codec8_packet(to_send)
+                last_packet_size = len(packet)
 
-            if not args.no_ui:
+                try:
+                    if not connected:
+                        client.connect_and_login(args.imei, retries=1)
+                        connected = True
+                        if args.debug:
+                            print("[sim] Connected and authenticated")
+
+                    ack = client.send_avl_packet(packet, records_sent=send_count)
+                    last_ack = ack
+                    del pending_records[:ack]
+
+                    if args.no_ui and args.debug and last_record is not None:
+                        print(
+                            "[sim] "
+                            f"lat={last_record['latitude']:.6f} "
+                            f"lon={last_record['longitude']:.6f} "
+                            f"speed={last_record['speed']:3d} "
+                            f"angle={last_record['angle']:3d} "
+                            f"ack={ack} buffer={len(pending_records)}"
+                        )
+                except (OSError, TimeoutError, ConnectionError) as exc:
+                    if connected or args.debug:
+                        print(f"[sim] Link issue ({exc}). Keeping {len(pending_records)} buffered records.")
+                    connected = False
+                    client.close()
+
+            if not args.no_ui and loop_start >= next_ui_refresh:
                 render_dashboard(
-                    record=record,
+                    record=last_record,
                     car=car,
                     controls=controls,
-                    ack=ack,
-                    packet_size=len(packet),
+                    ack=last_ack,
+                    packet_size=last_packet_size,
                     host=args.host,
                     port=args.port,
                     imei=args.imei,
+                    connected=connected,
+                    buffered_records=len(pending_records),
+                    next_interval_s=device.tx_interval(),
                 )
-            elif args.debug:
-                print(
-                    "[sim] "
-                    f"lat={record['latitude']:.6f} "
-                    f"lon={record['longitude']:.6f} "
-                    f"speed={record['speed']:3d} "
-                    f"angle={record['angle']:3d} "
-                    f"ack={ack}"
-                )
+                next_ui_refresh = loop_start + 0.2
 
-            elapsed = time.time() - tick_start
-            time.sleep(max(0.0, args.interval - elapsed))
+            sleep_for = args.physics_step - (time.time() - loop_start)
+            if sleep_for > 0:
+                time.sleep(sleep_for)
 
     except KeyboardInterrupt:
         print("\n[sim] Stopping simulator")

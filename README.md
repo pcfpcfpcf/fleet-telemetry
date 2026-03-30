@@ -258,6 +258,128 @@ docker compose down
 
 ---
 
+## Python FMC003 Simulator (Codec 8)
+
+This repository now includes a Python Teltonika-style simulator that sends binary Codec 8 AVL packets over TCP.
+
+Files:
+
+- simulator/main.py (input layer + CLI UI + main loop)
+- simulator/car.py (vehicle physics)
+- simulator/fmc003.py (device state + IO generation)
+- simulator/encoder.py (AVL/Codec 8 binary encoding + CRC-16/IBM)
+- simulator/network.py (TCP login + packet send + ACK handling)
+- simulator/demo_server.py (local protocol debug server with detailed decode output)
+
+### Quick Demo (2 terminals)
+
+1) Install dependency (once):
+
+```powershell
+python -m pip install pynput
+```
+
+2) Terminal A: start protocol debug server:
+
+```powershell
+python simulator/demo_server.py
+```
+
+3) Terminal B: start simulator:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816
+```
+
+Controls:
+
+- Arrow keys or WASD
+- Ctrl+C to stop
+
+What you should see:
+
+- Terminal B: live CLI speedometer, heading, position, IO summary, ACK
+- Terminal A: decoded packet details (timestamp, lat/lon, speed, angle, IO map, CRC check)
+
+### Useful CLI options
+
+- --debug (line logs mode)
+- --no-ui (disable dashboard)
+- --no-gps-noise
+- --interval 1.0
+- --latitude 36.8065 --longitude 10.1815
+
+Example:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --no-ui --debug
+```
+
+### Run against Traccar instead of local demo server
+
+If Traccar is running and listening on TCP 5055:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816
+```
+
+Then verify forwarding in adapter logs.
+
+### Troubleshooting
+
+- If you get ModuleNotFoundError: pynput, install with python -m pip install pynput.
+- In PowerShell, use py or python consistently with the same environment.
+- If key controls feel unresponsive, click/focus the simulator terminal window and use WASD.
+- If ACK/reconnect loops appear, verify server host/port and firewall access.
+
+### Realism notes and tuning points
+
+Current simulator quality:
+
+- Good for protocol and integration tests:
+  - Valid Codec 8 framing
+  - IMEI login flow
+  - CRC-16/IBM
+  - AVL record + grouped IO sections
+- Not yet a full FMC003 profile clone.
+
+To move closer to what a physical FMC003 sends, tune these areas:
+
+1. IO map completeness
+    - Add more AVL IDs actually enabled in your target FMC003 configuration profile.
+    - Keep exact data types and scaling (1/2/4/8-byte groups) matching Teltonika docs.
+
+2. Event IO ID behavior
+    - Set event_io_id to the actual trigger source per record (not always a fixed value).
+
+3. Multi-record buffering
+    - Implement burst sending with multiple AVL records in one packet when simulating offline cache flush.
+
+4. Realistic timing profiles
+    - Different intervals for moving, stopped, ignition off, and corner cases.
+
+5. GNSS realism
+    - Add HDOP/accuracy behavior, occasional satellite drops, and speed jitter smoothing.
+
+6. Vehicle dynamics realism
+    - Use acceleration curves and turn-rate limits rather than instant steering increments.
+
+7. Power/ignition states
+    - Simulate ACC transitions, sleep/wake, and battery voltage drift.
+
+8. Field-level validation
+    - Capture real device packets from your FMC003 and compare bytes field-by-field with simulator output.
+
+For strict parity work, use one known real-device packet capture as a golden sample and verify:
+
+- record count values
+- timestamp precision
+- signed coordinate encoding
+- each IO ID value, width, and ordering
+- CRC over the correct payload region
+
+---
+
 ## Reset From Scratch
 
 ```powershell

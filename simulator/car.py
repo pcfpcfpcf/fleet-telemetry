@@ -14,6 +14,8 @@ class Car:
     ignition: bool = True
 
     def accelerate(self, amount: float = 8.0) -> None:
+        if not self.ignition:
+            return
         self.speed = min(120.0, self.speed + amount)
 
     def brake(self, amount: float = 12.0) -> None:
@@ -25,14 +27,24 @@ class Car:
     def turn_right(self, degrees: float = 10.0) -> None:
         self.angle = (self.angle + degrees) % 360.0
 
-    def update(self, factor: float = 0.00001) -> None:
+    def update(self, dt_seconds: float = 1.0, factor: float = 0.00001) -> None:
+        dt_seconds = max(0.01, dt_seconds)
         radians = math.radians(self.angle)
-        self.latitude += math.cos(radians) * self.speed * factor
-        self.longitude += math.sin(radians) * self.speed * factor
-        self.speed *= 0.95
+
+        if not self.ignition:
+            drag_per_second = 0.88
+        else:
+            drag_per_second = 0.95
+
+        self.latitude += math.cos(radians) * self.speed * factor * dt_seconds
+        self.longitude += math.sin(radians) * self.speed * factor * dt_seconds
+        self.speed *= drag_per_second ** dt_seconds
         if self.speed < 0.05:
             self.speed = 0.0
         self.speed = max(0.0, min(120.0, self.speed))
+
+    def toggle_ignition(self) -> None:
+        self.ignition = not self.ignition
 
     def noisy_position(self, sigma: float = 0.000002) -> tuple[float, float]:
         return (
