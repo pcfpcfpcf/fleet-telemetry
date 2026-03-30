@@ -70,7 +70,14 @@ function randomizeSpeed() {
  */
 function updateFuel(currentFuel) {
   const fuelBurn = Math.random() * 0.5; // Lose 0-0.5% per 30 seconds
-  return Math.max(0, currentFuel - fuelBurn);
+  let newFuel = Math.max(0, currentFuel - fuelBurn);
+  
+  // Refuel if empty (simulate refueling)
+  if (newFuel <= 0) {
+    newFuel = 60 + Math.random() * 40; // Refuel to 60-100%
+  }
+  
+  return newFuel;
 }
 
 /**
