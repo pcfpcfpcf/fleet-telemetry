@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import threading
 import time
+from typing import Any
 
 from car import Car
 from encoder import build_codec8_packet, validate_crc_self_test
@@ -49,6 +50,19 @@ class KeyboardInputLayer:
             self.controls.set_key("left", True)
         elif key == keyboard.Key.right:
             self.controls.set_key("right", True)
+        else:
+            key_char = getattr(key, "char", None)
+            if key_char is None:
+                return
+            key_char = key_char.lower()
+            if key_char == "w":
+                self.controls.set_key("up", True)
+            elif key_char == "s":
+                self.controls.set_key("down", True)
+            elif key_char == "a":
+                self.controls.set_key("left", True)
+            elif key_char == "d":
+                self.controls.set_key("right", True)
 
     def _on_release(self, key) -> None:
         if key == keyboard.Key.up:
@@ -59,6 +73,19 @@ class KeyboardInputLayer:
             self.controls.set_key("left", False)
         elif key == keyboard.Key.right:
             self.controls.set_key("right", False)
+        else:
+            key_char = getattr(key, "char", None)
+            if key_char is None:
+                return
+            key_char = key_char.lower()
+            if key_char == "w":
+                self.controls.set_key("up", False)
+            elif key_char == "s":
+                self.controls.set_key("down", False)
+            elif key_char == "a":
+                self.controls.set_key("left", False)
+            elif key_char == "d":
+                self.controls.set_key("right", False)
 
     def start(self) -> None:
         if keyboard is None:
@@ -74,6 +101,53 @@ class KeyboardInputLayer:
             self.listener = None
 
 
+def _on_off(value: bool) -> str:
+    return "ON " if value else "OFF"
+
+
+def render_dashboard(
+    record: dict[str, Any],
+    car: Car,
+    controls: ControlState,
+    ack: int,
+    packet_size: int,
+    host: str,
+    port: int,
+    imei: str,
+) -> None:
+    up, down, left, right = controls.snapshot()
+    speed = max(0.0, min(120.0, float(car.speed)))
+    width = 36
+    filled = int((speed / 120.0) * width)
+    bar = "#" * filled + "-" * (width - filled)
+
+    print("\x1b[2J\x1b[H", end="")
+    print("+----------------------------------------------------------+")
+    print("|                 TELTONIKA FMC003 SIMULATOR              |")
+    print("+----------------------------------------------------------+")
+    print(f" Target: {host}:{port}   IMEI: {imei}")
+    print(" Controls: Arrow keys or WASD")
+    print(
+        " Input State: "
+        f"UP[{_on_off(up)}] DOWN[{_on_off(down)}] "
+        f"LEFT[{_on_off(left)}] RIGHT[{_on_off(right)}]"
+    )
+    print("")
+    print(f" Speedometer [{bar}] {speed:6.2f} km/h")
+    print(f" Heading: {car.angle:6.2f} deg    Ignition: {_on_off(car.ignition)}")
+    print(
+        f" Position: lat={record['latitude']:.6f} lon={record['longitude']:.6f} "
+        f"alt={record['altitude']}m sat={record['satellites']}"
+    )
+    print(
+        f" Packet: {packet_size} bytes  ACK: {ack}  IO: "
+        f"ign={record['io_elements'].get(239)} mov={record['io_elements'].get(240)} "
+        f"spd={record['io_elements'].get(24)} batt={record['io_elements'].get(66)}"
+    )
+    print("+----------------------------------------------------------+")
+    print(" Press Ctrl+C to stop")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Teltonika FMC003 Codec8 TCP simulator")
     parser.add_argument("--host", default="127.0.0.1", help="TCP server host")
@@ -84,6 +158,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--longitude", type=float, default=10.1815, help="Initial longitude")
     parser.add_argument("--no-gps-noise", action="store_true", help="Disable GPS noise")
     parser.add_argument("--debug", action="store_true", help="Print periodic telemetry debug logs")
+    parser.add_argument("--no-ui", action="store_true", help="Disable dashboard and print debug lines only")
     return parser.parse_args()
 
 
@@ -115,7 +190,10 @@ def main() -> int:
     client = TeltonikaTCPClient(host=args.host, port=args.port)
 
     keyboard_input.start()
-    print(f"[sim] Keyboard active. Use arrow keys to drive. Target={args.host}:{args.port} IMEI={args.imei}")
+    print(
+        "[sim] Keyboard active. Use arrow keys or WASD to drive. "
+        f"Target={args.host}:{args.port} IMEI={args.imei}"
+    )
 
     try:
         client.connect_and_login(args.imei)
@@ -137,7 +215,18 @@ def main() -> int:
                 client.connect_and_login(args.imei)
                 ack = client.send_avl_packet(packet, records_sent=1)
 
-            if args.debug:
+            if not args.no_ui:
+                render_dashboard(
+                    record=record,
+                    car=car,
+                    controls=controls,
+                    ack=ack,
+                    packet_size=len(packet),
+                    host=args.host,
+                    port=args.port,
+                    imei=args.imei,
+                )
+            elif args.debug:
                 print(
                     "[sim] "
                     f"lat={record['latitude']:.6f} "
