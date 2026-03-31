@@ -1,4 +1,9 @@
 <meta>
     <info author="FleetTelemetry" name="fmc003_bridge" version="1.0.0" type="script" />
+    <settings>
+        <setting name="bridgeHost" value="auto" />
+        <setting name="bridgePort" value="8765" />
+    </settings>
+    <script src="server.lua" type="server" />
     <script src="client.lua" type="client" />
 </meta>

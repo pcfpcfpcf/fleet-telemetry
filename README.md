@@ -260,258 +260,90 @@ docker compose down
 
 ## Python FMC003 Simulator (Codec 8)
 
-This repository now includes a Python Teltonika-style simulator that sends binary Codec 8 AVL packets over TCP.
+This simulator sends Teltonika-style binary Codec 8 packets over TCP.
 
-Files:
+### Quick start
 
-- simulator/main.py (input layer + CLI UI + main loop)
-- simulator/car.py (vehicle physics)
-- simulator/fmc003.py (device state + IO generation)
-- simulator/encoder.py (AVL/Codec 8 binary encoding + CRC-16/IBM)
-- simulator/network.py (TCP login + packet send + ACK handling)
-- simulator/demo_server.py (local protocol debug server with detailed decode output)
-
-### Quick Demo (2 terminals)
-
-1) Install dependency (once):
+Install dependency once:
 
 ```powershell
 python -m pip install pynput
 ```
 
-2) Terminal A: start protocol debug server:
+Terminal A (packet inspector):
 
 ```powershell
 python simulator/demo_server.py
 ```
 
-3) Terminal B: start simulator:
+Terminal B (simulator):
 
 ```powershell
 python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816
 ```
 
-Controls:
+Controls: WASD/arrow keys, Ctrl+C to stop.
 
-- Arrow keys or WASD
-- Ctrl+C to stop
+### Simulator files at a glance
 
-What you should see:
+- `simulator/main.py`: CLI device simulator entry point (connects, logs in, sends Codec 8 AVL).
+- `simulator/fmc003.py`: FMC003 behavior model (OBD-like metrics, events, geofence logic).
+- `simulator/encoder.py`: Codec 8 binary packet builder and CRC framing.
+- `simulator/network.py`: TCP session handling (IMEI login + AVL ACK flow).
+- `simulator/demo_server.py`: local packet inspector to verify what is actually sent.
+- `simulator/game_bridge.py`: HTTP bridge from MTA telemetry to Teltonika Codec 8 TCP.
+- `simulator/monitor.py`: terminal dashboard for devices, events, geofence status, and live stats.
+- `simulator/profiles/fmc003.default.json`: tuning profile (thresholds, geofences, IO mappings).
+- `simulator/mta_resource/`: MTA client/server Lua resource that publishes vehicle telemetry.
 
-- Terminal B: live CLI speedometer, heading, position, IO summary, ACK
-- Terminal A: decoded packet details (timestamp, lat/lon, speed, angle, IO map, CRC check)
+### Most useful options
 
-### Useful CLI options
-
-- --debug (line logs mode)
-- --no-ui (disable dashboard)
-- --no-gps-noise
-- --physics-step 0.1
-- --moving-interval 1.0
-- --idle-interval 5.0
-- --ignition-off-interval 10.0
-- --burst-size 5
-- --max-buffer 1000
-- --profile simulator/profiles/fmc003.default.json
-- --latitude 36.8065 --longitude 10.1815
+```text
+--debug --no-ui --profile simulator/profiles/fmc003.default.json --no-gps-noise
+```
 
 Example:
 
 ```powershell
-python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --no-ui --debug
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --no-ui --debug --profile simulator/profiles/fmc003.default.json
 ```
 
-### Run against Traccar instead of local demo server
+### Replay real packets (byte-for-byte)
 
-If Traccar is running and listening on TCP 5055:
-
-```powershell
-python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816
-```
-
-Then verify forwarding in adapter logs.
-
-### Troubleshooting
-
-- If you get ModuleNotFoundError: pynput, install with python -m pip install pynput.
-- In PowerShell, use py or python consistently with the same environment.
-- If key controls feel unresponsive, click/focus the simulator terminal window and use WASD.
-- If ACK/reconnect loops appear, verify server host/port and firewall access.
-
-### Realism notes and tuning points
-
-Current simulator quality:
-
-- Good for protocol and integration tests:
-  - Valid Codec 8 framing
-  - IMEI login flow
-  - CRC-16/IBM
-  - AVL record + grouped IO sections
-- Not yet a full FMC003 profile clone.
-
-To move closer to what a physical FMC003 sends, tune these areas:
-
-1. IO map completeness
-    - Add more AVL IDs actually enabled in your target FMC003 configuration profile.
-    - Keep exact data types and scaling (1/2/4/8-byte groups) matching Teltonika docs.
-
-2. Event IO ID behavior
-    - Set event_io_id to the actual trigger source per record (not always a fixed value).
-
-3. Multi-record buffering
-    - Implement burst sending with multiple AVL records in one packet when simulating offline cache flush.
-
-4. Realistic timing profiles
-    - Different intervals for moving, stopped, ignition off, and corner cases.
-
-5. GNSS realism
-    - Add HDOP/accuracy behavior, occasional satellite drops, and speed jitter smoothing.
-
-6. Vehicle dynamics realism
-    - Use acceleration curves and turn-rate limits rather than instant steering increments.
-
-7. Power/ignition states
-    - Simulate ACC transitions, sleep/wake, and battery voltage drift.
-
-8. Field-level validation
-    - Capture real device packets from your FMC003 and compare bytes field-by-field with simulator output.
-
-For strict parity work, use one known real-device packet capture as a golden sample and verify:
-
-- record count values
-- timestamp precision
-- signed coordinate encoding
-- each IO ID value, width, and ordering
-- CRC over the correct payload region
-
-### Profile-driven emulation (new)
-
-The emulator supports a JSON profile for IO mapping/scaling/sizing and event routing.
-
-Default profile file:
-
-- simulator/profiles/fmc003.default.json
-
-Run with profile:
-
-```powershell
-python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --profile simulator/profiles/fmc003.default.json
-```
-
-Profile schema:
-
-- name: profile name
-- io: object keyed by AVL ID
-    - source: ignition, movement, speed_kmh, battery_mv, gsm_signal, odometer_m, fuel_pct, rpm
-    - size: 1|2|4|8
-    - scale (optional): numeric multiplier
-    - offset (optional): numeric adder
-    - min/max (optional): value clamps
-- events:
-    - ignition_change: AVL ID
-    - movement_change: AVL ID
-    - speed_bucket_change: AVL ID
-    - default: AVL ID
-    - speed_bucket_size: integer
-
-### Golden packet comparator (new)
-
-Use this tool to compare simulator packet bytes and decoded fields against a real FMC003 packet capture.
-
-File:
-
-- simulator/golden_compare.py
-
-Examples:
-
-```powershell
-python simulator/golden_compare.py --actual-file .\actual.bin --expected-file .\golden.bin
-```
-
-```powershell
-python simulator/golden_compare.py --actual-hex "00000000..." --expected-hex "00000000..."
-```
-
-```powershell
-python simulator/golden_compare.py --actual-record-json .\record.json --expected-file .\golden.bin --json
-```
-
-Exit code is 0 only when both byte-level and decoded-level diffs are clean.
-
-### Strict raw replay mode (byte-for-byte)
-
-If you want the simulator to send exactly what an FMC003 sent (no generated telemetry path), use replay mode.
-
-Create a text file with one full Codec 8 packet hex string per line:
-
-```text
-# one packet per line (spaces allowed)
-000000000000002B0801000001...
-000000000000002B0801000001...
-```
-
-Run strict replay:
+Use replay mode if you want to transmit captured FMC003 packets exactly as-is:
 
 ```powershell
 python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --replay-hex-file .\packets.hex --debug
 ```
 
-Loop replay sequence continuously:
+Loop replay:
 
 ```powershell
 python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --replay-hex-file .\packets.hex --replay-loop --replay-interval 1.0 --debug
 ```
 
-Notes:
+### MTA bridge (LAN)
 
-- Runtime transmission is always binary Codec 8 frames over TCP.
-- JSON profile/config is only for local emulator behavior tuning, not wire payload format.
-- Replay mode bypasses generated records and sends captured packet bytes as-is.
-
-### Week 1 MTA LAN setup (game telemetry to FMC packets)
-
-If you already have MTA, you can start with this minimal LAN workflow now.
-
-Bridge files in this repo:
-
-- simulator/game_bridge.py
-- simulator/mta_resource/meta.xml
-- simulator/mta_resource/client.lua
-
-Step 1: Start local decoder target (choose one)
-
-- Option A: Traccar on port 5055
-- Option B: local packet inspector: python simulator/demo_server.py
-
-Step 2: Start Python bridge
+1. Start target receiver (Traccar on 5055 or local demo server).
+2. Start bridge:
 
 ```powershell
 python simulator/game_bridge.py --listen-host 0.0.0.0 --listen-port 8765 --target-host 127.0.0.1 --target-port 5055 --debug
 ```
 
-Step 3: Install MTA resource
-
-Copy simulator/mta_resource to your MTA resources folder as:
-
-- resources/fmc003_bridge/
-
-Then in MTA server console:
+3. Copy `simulator/mta_resource` to MTA resources as `resources/fmc003_bridge/`.
+4. In MTA server console:
 
 ```text
 refresh
 start fmc003_bridge
 ```
 
-Step 4: Drive in LAN session
+### Quick troubleshooting
 
-- Each client sends vehicle state every 250ms to bridge endpoint /telemetry.
-- Bridge maps each player to a deterministic 15-digit IMEI and emits real binary Codec 8 over TCP.
-
-Notes:
-
-- The current client script maps GTA world x/y to lat/lon using a simple scale. Calibrate originLat, originLon, and worldScale in client.lua for your map preference.
-- If bridge is not on the same machine as MTA client, set bridgeUrl in client.lua to the bridge machine LAN IP.
-- Week 1 goal is full pipeline connectivity. Week 2 can add better map projection and richer event rules.
+- If no traffic appears, kill duplicate Python processes and start only one bridge + one demo server.
+- If MTA client is remote, set bridge host in `simulator/mta_resource/client.lua` to bridge LAN IP (not 127.0.0.1).
+- If monitor shows data but bridge terminal does not, you are likely watching a different bridge process.
 
 ---
 

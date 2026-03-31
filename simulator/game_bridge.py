@@ -4,6 +4,7 @@ import argparse
 from dataclasses import dataclass
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
 import sys
 import threading
 import time
@@ -63,6 +64,13 @@ class BridgeState:
         self.ok_count = 0
         self.fail_count = 0
         self.last_player = "-"
+        self.started_at = time.time()
+        self.last_rx_at = 0.0
+        self.instance_id = f"bridge-{os.getpid()}-{int(self.started_at)}"
+        # Fallback inverse projection matching client.lua defaults.
+        self.origin_lat = 36.8065
+        self.origin_lon = 10.1815
+        self.world_scale = 0.00001
 
     def _imei_for_player(self, player_id: str) -> str:
         suffix = zlib.crc32(player_id.encode("utf-8")) % 100000
@@ -110,13 +118,72 @@ class BridgeState:
         try:
             lat = float(payload["latitude"])
             lon = float(payload["longitude"])
+            world_x = float(payload.get("worldX")) if payload.get("worldX") is not None else None
+            world_y = float(payload.get("worldY")) if payload.get("worldY") is not None else None
+            zone_name = str(payload.get("zoneName", "")).strip()
+            city_name = str(payload.get("cityName", "")).strip()
             speed = float(payload.get("speedKmh", 0.0))
             angle = float(payload.get("angleDeg", 0.0))
             ignition = bool(payload.get("ignition", True))
         except (KeyError, TypeError, ValueError) as e:
             return 400, f"invalid telemetry payload: {e}"
 
+        extended_metric_keys = {
+            "rpm",
+            "engine_rpm",
+            "speed_kmh",
+            "vehicle_speed",
+            "engine_temp_c",
+            "coolant_temp_c",
+            "engine_oil_temp_c",
+            "engine_load_pct",
+            "abs_load_pct",
+            "throttle_pct",
+            "stft_b1_pct",
+            "ltft_b1_pct",
+            "fuel_pressure_kpa",
+            "intake_map_kpa",
+            "timing_advance_deg",
+            "intake_air_temp_c",
+            "maf_gps",
+            "runtime_since_engine_start_s",
+            "fuel_rail_pressure_rel_kpa",
+            "fuel_rail_pressure_direct_kpa",
+            "abs_fuel_rail_pressure_kpa",
+            "commanded_egr_pct",
+            "egr_error_pct",
+            "fuel_level",
+            "fuel_pct",
+            "mileage_km",
+            "distance_since_codes_cleared_km",
+            "barometric_pressure_kpa",
+            "control_module_voltage_v",
+            "ambient_air_temp_c",
+            "time_since_codes_cleared_s",
+            "hybrid_battery_remaining_pct",
+            "fuel_injector_timing_deg",
+            "fuel_rate_lph",
+            "dtc_count",
+            "dtc_value",
+            "mil_on",
+            "distance_since_mil_on_km",
+            "time_since_mil_on_s",
+            "vin_hash",
+            "accel_kmh_s",
+        }
+
+        external_metrics: dict[str, Any] = {}
+        for key in extended_metric_keys:
+            if key in payload:
+                external_metrics[key] = payload.get(key)
+
         now = time.time()
+
+        # Fallback for clients/resources that do not send world coordinates yet.
+        if world_x is None:
+            world_x = (lon - self.origin_lon) / self.world_scale
+        if world_y is None:
+            world_y = (lat - self.origin_lat) / self.world_scale
 
         with self.lock:
             session = self.get_or_create_session(player_id, lat, lon)
@@ -128,6 +195,9 @@ class BridgeState:
             session.car.speed = max(0.0, min(120.0, speed))
             session.car.angle = angle % 360.0
             session.car.ignition = ignition
+            session.fmc.set_world_position(world_x, world_y)
+            session.fmc.set_location_names(zone_name, city_name)
+            session.fmc.set_external_metrics(external_metrics)
 
             record = session.fmc.build_record(add_gps_noise=False, dt_seconds=dt)
             packet = build_codec8_packet([record])
@@ -147,6 +217,7 @@ class BridgeState:
                         raise
                 
                 ack = session.client.send_avl_packet(packet, records_sent=1)
+                session.fmc.note_uplink_result(success=True)
                 if debug:
                     print(
                         f"[bridge] player={player_id} imei={session.imei} "
@@ -156,6 +227,7 @@ class BridgeState:
             except (OSError, TimeoutError, ConnectionError) as exc:
                 session.connected = False
                 session.client.close()
+                session.fmc.note_uplink_result(success=False)
                 print(f"[bridge] ERROR send failed for {player_id}: {type(exc).__name__}: {exc}", flush=True)
                 return 502, f"upstream send failed: {exc}"
 
@@ -190,6 +262,7 @@ def create_handler(state: BridgeState, debug: bool):
             with state.lock:
                 state.rx_count += 1
                 state.last_player = player_hint
+                state.last_rx_at = time.time()
             print(f"[bridge] RX path={self.path} player={player_hint}", flush=True)
 
             debug_log(f"[bridge] received payload type={type(payload).__name__}")
@@ -237,6 +310,10 @@ def create_handler(state: BridgeState, debug: bool):
                 with state.lock:
                     status = {
                         "target": f"{state.target_host}:{state.target_port}",
+                        "bridge_instance_id": state.instance_id,
+                        "bridge_pid": os.getpid(),
+                        "uptime_s": int(time.time() - state.started_at),
+                        "last_rx_age_s": (None if state.last_rx_at == 0.0 else round(time.time() - state.last_rx_at, 2)),
                         "sessions": len(state.sessions),
                         "recent_errors": _error_history[-10:] if _error_history else [],
                         "players": {}
@@ -247,7 +324,36 @@ def create_handler(state: BridgeState, debug: bool):
                             "connected": session.connected,
                             "lat": session.car.latitude,
                             "lon": session.car.longitude,
+                            "world_x": session.fmc.world_x,
+                            "world_y": session.fmc.world_y,
+                            "zone_name": session.fmc.zone_name,
+                            "city_name": session.fmc.city_name,
                             "speed": session.car.speed,
+                            "angle": session.car.angle,
+                            "ignition": session.car.ignition,
+                            "last_event_io_id": session.fmc.last_event_io_id,
+                            "last_event_reason": session.fmc.last_event_reason,
+                            "active_geofence": session.fmc.active_geofence,
+                            "geofence_inside": session.fmc.geofence_inside,
+                            "nearest_geofence": session.fmc.nearest_geofence,
+                            "nearest_geofence_distance_m": session.fmc.nearest_geofence_distance_m,
+                            "geofence_inside_polygon": session.fmc.geofence_inside_polygon,
+                            "geofence_inside_circle": session.fmc.geofence_inside_circle,
+                            "geofence_distance_polygon_m": session.fmc.geofence_distance_polygon_m,
+                            "geofence_distance_circle_m": session.fmc.geofence_distance_circle_m,
+                            "geofence_radius_m": session.fmc.geofence_radius_m,
+                            "geofence_zone_match": session.fmc.geofence_zone_match,
+                            "geofence_city_match": session.fmc.geofence_city_match,
+                            "idle_seconds": session.fmc.idle_seconds,
+                            "engine_temp_c": session.fmc.engine_temp_c,
+                            "accel_kmh_s": session.fmc.last_accel_kmh_s,
+                            "dtc_value": session.fmc.dtc_value,
+                            "vin": session.fmc.vin,
+                            "device_mode": session.fmc.device_mode,
+                            "queue_depth": session.fmc.queue_depth,
+                            "network_rsrp_dbm": session.fmc.rsrp_dbm,
+                            "gnss_fix": session.fmc.gnss_fix,
+                            "obd_metrics": session.fmc.last_metrics or {},
                         }
                 self.wfile.write(json.dumps(status, indent=2).encode("utf-8"))
                 return
@@ -316,7 +422,7 @@ def main() -> int:
             with state.lock:
                 connected_count = sum(1 for s in state.sessions.values() if s.connected)
                 print(
-                    f"[bridge] heartbeat rx={state.rx_count} ok={state.ok_count} "
+                    f"[bridge] heartbeat id={state.instance_id} rx={state.rx_count} ok={state.ok_count} "
                     f"fail={state.fail_count} sessions={len(state.sessions)} "
                     f"connected={connected_count} last_player={state.last_player}",
                     flush=True,
