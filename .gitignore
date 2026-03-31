@@ -60,3 +60,8 @@ ehthumbs.db
 Thumbs.db
 
 .env
+certs/*.key
+certs/*.csr
+
+certs/*.key
+certs/*.csr

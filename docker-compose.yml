@@ -10,8 +10,10 @@ services:
         condition: service_healthy
     environment:
       MQTT_HOST: emqx
-      MQTT_PORT: 1883
-      MQTT_PROTOCOL: mqtt
+      MQTT_PORT: 8883
+      MQTT_PROTOCOL: mqtts
+    volumes:
+      - ./certs:/certs:ro
     networks:
       - fleet-network
     restart: unless-stopped
@@ -32,6 +34,8 @@ services:
       EMQX_LOG__CONSOLE__LEVEL: "warning"
     volumes:
       - ./data/emqx:/opt/emqx/data
+      - ./certs:/opt/emqx/certs:ro
+      - ./config/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
     networks:
       - fleet-network
     healthcheck:
