@@ -2,6 +2,8 @@ name: Demo Smoke Pipeline
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NATS_ADAPTER_PASSWORD: ${{ secrets.NATS_ADAPTER_PASSWORD }}
+  NATS_L4_PASSWORD: ${{ secrets.NATS_L4_PASSWORD }}
 
 on:
   push:
