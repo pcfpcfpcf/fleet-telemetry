@@ -9,6 +9,8 @@ from car import Car
 from encoder import build_codec8_packet, validate_crc_self_test
 from fmc003 import FMC003
 from network import TeltonikaTCPClient
+from profile import load_profile
+from replay import codec8_record_count, load_hex_packets
 
 try:
     from pynput import keyboard
@@ -192,6 +194,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ignition-off-interval", type=float, default=10.0, help="AVL interval while ignition is off")
     parser.add_argument("--burst-size", type=int, default=5, help="Max buffered records to send per packet")
     parser.add_argument("--max-buffer", type=int, default=1000, help="Max buffered records kept while offline")
+    parser.add_argument("--profile", default=None, help="Path to JSON profile for IO IDs/sizes/scaling")
+    parser.add_argument(
+        "--replay-hex-file",
+        default=None,
+        help="Path to text file with one full Codec8 packet hex string per line (sent byte-for-byte)",
+    )
+    parser.add_argument("--replay-loop", action="store_true", help="Loop replay packet sequence indefinitely")
+    parser.add_argument("--replay-interval", type=float, default=1.0, help="Delay between replay packets in seconds")
     return parser.parse_args()
 
 
@@ -221,8 +231,51 @@ def main() -> int:
         raise ValueError("burst-size must be > 0")
     if args.max_buffer <= 0:
         raise ValueError("max-buffer must be > 0")
+    if args.replay_interval <= 0:
+        raise ValueError("replay-interval must be > 0")
     if not validate_crc_self_test():
         raise RuntimeError("CRC-16/IBM self-test failed")
+
+    if args.replay_hex_file:
+        replay_packets = load_hex_packets(args.replay_hex_file)
+        client = TeltonikaTCPClient(host=args.host, port=args.port)
+        print(
+            f"[sim] Strict replay mode. Sending byte-for-byte packets from {args.replay_hex_file} "
+            f"to {args.host}:{args.port} IMEI={args.imei}"
+        )
+
+        try:
+            client.connect_and_login(args.imei)
+            print("[sim] Connected and authenticated")
+
+            while True:
+                for idx, packet in enumerate(replay_packets, start=1):
+                    records = codec8_record_count(packet)
+                    try:
+                        ack = client.send_avl_packet(packet, records_sent=records)
+                    except (OSError, TimeoutError, ConnectionError) as exc:
+                        print(f"[sim] Replay link issue ({exc}), reconnecting...")
+                        client.connect_and_login(args.imei)
+                        ack = client.send_avl_packet(packet, records_sent=records)
+
+                    if args.debug:
+                        print(
+                            f"[sim] replay packet={idx}/{len(replay_packets)} "
+                            f"size={len(packet)} records={records} ack={ack}"
+                        )
+                    time.sleep(args.replay_interval)
+
+                if not args.replay_loop:
+                    break
+
+        except KeyboardInterrupt:
+            print("\n[sim] Stopping replay")
+        finally:
+            client.close()
+
+        return 0
+
+    profile = load_profile(args.profile)
 
     car = Car(latitude=args.latitude, longitude=args.longitude, speed=0.0, angle=0.0, ignition=True)
     device = FMC003(
@@ -231,6 +284,7 @@ def main() -> int:
         moving_interval_s=args.moving_interval,
         idle_interval_s=args.idle_interval,
         ignition_off_interval_s=args.ignition_off_interval,
+        profile=profile,
     )
 
     controls = ControlState()

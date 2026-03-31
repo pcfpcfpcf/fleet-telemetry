@@ -306,7 +306,13 @@ What you should see:
 - --debug (line logs mode)
 - --no-ui (disable dashboard)
 - --no-gps-noise
-- --interval 1.0
+- --physics-step 0.1
+- --moving-interval 1.0
+- --idle-interval 5.0
+- --ignition-off-interval 10.0
+- --burst-size 5
+- --max-buffer 1000
+- --profile simulator/profiles/fmc003.default.json
 - --latitude 36.8065 --longitude 10.1815
 
 Example:
@@ -377,6 +383,135 @@ For strict parity work, use one known real-device packet capture as a golden sam
 - signed coordinate encoding
 - each IO ID value, width, and ordering
 - CRC over the correct payload region
+
+### Profile-driven emulation (new)
+
+The emulator supports a JSON profile for IO mapping/scaling/sizing and event routing.
+
+Default profile file:
+
+- simulator/profiles/fmc003.default.json
+
+Run with profile:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --profile simulator/profiles/fmc003.default.json
+```
+
+Profile schema:
+
+- name: profile name
+- io: object keyed by AVL ID
+    - source: ignition, movement, speed_kmh, battery_mv, gsm_signal, odometer_m, fuel_pct, rpm
+    - size: 1|2|4|8
+    - scale (optional): numeric multiplier
+    - offset (optional): numeric adder
+    - min/max (optional): value clamps
+- events:
+    - ignition_change: AVL ID
+    - movement_change: AVL ID
+    - speed_bucket_change: AVL ID
+    - default: AVL ID
+    - speed_bucket_size: integer
+
+### Golden packet comparator (new)
+
+Use this tool to compare simulator packet bytes and decoded fields against a real FMC003 packet capture.
+
+File:
+
+- simulator/golden_compare.py
+
+Examples:
+
+```powershell
+python simulator/golden_compare.py --actual-file .\actual.bin --expected-file .\golden.bin
+```
+
+```powershell
+python simulator/golden_compare.py --actual-hex "00000000..." --expected-hex "00000000..."
+```
+
+```powershell
+python simulator/golden_compare.py --actual-record-json .\record.json --expected-file .\golden.bin --json
+```
+
+Exit code is 0 only when both byte-level and decoded-level diffs are clean.
+
+### Strict raw replay mode (byte-for-byte)
+
+If you want the simulator to send exactly what an FMC003 sent (no generated telemetry path), use replay mode.
+
+Create a text file with one full Codec 8 packet hex string per line:
+
+```text
+# one packet per line (spaces allowed)
+000000000000002B0801000001...
+000000000000002B0801000001...
+```
+
+Run strict replay:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --replay-hex-file .\packets.hex --debug
+```
+
+Loop replay sequence continuously:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --replay-hex-file .\packets.hex --replay-loop --replay-interval 1.0 --debug
+```
+
+Notes:
+
+- Runtime transmission is always binary Codec 8 frames over TCP.
+- JSON profile/config is only for local emulator behavior tuning, not wire payload format.
+- Replay mode bypasses generated records and sends captured packet bytes as-is.
+
+### Week 1 MTA LAN setup (game telemetry to FMC packets)
+
+If you already have MTA, you can start with this minimal LAN workflow now.
+
+Bridge files in this repo:
+
+- simulator/game_bridge.py
+- simulator/mta_resource/meta.xml
+- simulator/mta_resource/client.lua
+
+Step 1: Start local decoder target (choose one)
+
+- Option A: Traccar on port 5055
+- Option B: local packet inspector: python simulator/demo_server.py
+
+Step 2: Start Python bridge
+
+```powershell
+python simulator/game_bridge.py --listen-host 0.0.0.0 --listen-port 8765 --target-host 127.0.0.1 --target-port 5055 --debug
+```
+
+Step 3: Install MTA resource
+
+Copy simulator/mta_resource to your MTA resources folder as:
+
+- resources/fmc003_bridge/
+
+Then in MTA server console:
+
+```text
+refresh
+start fmc003_bridge
+```
+
+Step 4: Drive in LAN session
+
+- Each client sends vehicle state every 250ms to bridge endpoint /telemetry.
+- Bridge maps each player to a deterministic 15-digit IMEI and emits real binary Codec 8 over TCP.
+
+Notes:
+
+- The current client script maps GTA world x/y to lat/lon using a simple scale. Calibrate originLat, originLon, and worldScale in client.lua for your map preference.
+- If bridge is not on the same machine as MTA client, set bridgeUrl in client.lua to the bridge machine LAN IP.
+- Week 1 goal is full pipeline connectivity. Week 2 can add better map projection and richer event rules.
 
 ---
 

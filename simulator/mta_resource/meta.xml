@@ -1,0 +1,4 @@
+<meta>
+    <info author="FleetTelemetry" name="fmc003_bridge" version="1.0.0" type="script" />
+    <script src="client.lua" type="client" />
+</meta>

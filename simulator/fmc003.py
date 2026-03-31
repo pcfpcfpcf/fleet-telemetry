@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
+from typing import Any
 
 from car import Car
+from profile import DEFAULT_PROFILE
 
 
 @dataclass
@@ -20,11 +22,23 @@ class FMC003:
     moving_interval_s: float = 1.0
     idle_interval_s: float = 5.0
     ignition_off_interval_s: float = 10.0
+    profile: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        if self.profile is None:
+            self.profile = DEFAULT_PROFILE
         self._last_ignition = self.car.ignition
         self._last_movement = self.car.speed > 1.0
-        self._last_speed_bucket = int(self.car.speed // 5)
+        self._last_speed_bucket = int(self.car.speed // self._speed_bucket_size())
+
+    def _speed_bucket_size(self) -> int:
+        if self.profile is None:
+            return 5
+        events = self.profile.get("events", {})
+        try:
+            return max(1, int(events.get("speed_bucket_size", 5)))
+        except (TypeError, ValueError):
+            return 5
 
     def tx_interval(self) -> float:
         if not self.car.ignition:
@@ -34,15 +48,16 @@ class FMC003:
         return self.idle_interval_s
 
     def _event_io_id(self, movement: bool, speed_int: int) -> int:
-        speed_bucket = speed_int // 5
+        events = self.profile.get("events", {}) if self.profile else {}
+        speed_bucket = speed_int // self._speed_bucket_size()
         if self.car.ignition != self._last_ignition:
-            event_id = 239
+            event_id = int(events.get("ignition_change", 239))
         elif movement != self._last_movement:
-            event_id = 240
+            event_id = int(events.get("movement_change", 240))
         elif speed_bucket != self._last_speed_bucket:
-            event_id = 24
+            event_id = int(events.get("speed_bucket_change", 24))
         else:
-            event_id = 0
+            event_id = int(events.get("default", 0))
 
         self._last_ignition = self.car.ignition
         self._last_movement = movement
@@ -67,19 +82,40 @@ class FMC003:
         speed_int = int(round(self.car.speed))
         movement = 1 if self.car.speed > 1.0 else 0
         rpm = int(650 + (self.car.speed / 120.0) * 2600) if self.car.ignition else 0
-        fuel_permille = int(round(self.fuel_level_pct * 10.0))
         odometer_m = int(self.odometer_km * 1000.0)
-
-        io_values = {
-            239: 1 if self.car.ignition else 0,
-            240: movement,
-            24: speed_int,
-            66: self.battery_mv,
-            21: self.gsm_signal,
-            16: odometer_m,
-            13: fuel_permille,
-            12: rpm,
+        metrics = {
+            "ignition": 1 if self.car.ignition else 0,
+            "movement": movement,
+            "speed_kmh": speed_int,
+            "battery_mv": self.battery_mv,
+            "gsm_signal": self.gsm_signal,
+            "odometer_m": odometer_m,
+            "fuel_pct": self.fuel_level_pct,
+            "rpm": rpm,
         }
+
+        io_values: dict[int, int] = {}
+        io_config = self.profile.get("io", {}) if self.profile else {}
+        for io_id_str, conf in io_config.items():
+            io_id = int(io_id_str)
+            source = conf.get("source")
+            if source not in metrics:
+                continue
+
+            raw = float(metrics[source])
+            scale = float(conf.get("scale", 1.0))
+            offset = float(conf.get("offset", 0.0))
+            value = int(round(raw * scale + offset))
+
+            min_value = conf.get("min")
+            max_value = conf.get("max")
+            if min_value is not None:
+                value = max(int(min_value), value)
+            if max_value is not None:
+                value = min(int(max_value), value)
+
+            io_values[io_id] = value
+
         return io_values
 
     def build_record(
@@ -95,14 +131,8 @@ class FMC003:
         event_io_id = self._event_io_id(movement=movement, speed_int=speed_int)
 
         io_sizes = {
-            239: 1,
-            240: 1,
-            24: 2,
-            66: 2,
-            21: 1,
-            16: 4,
-            13: 2,
-            12: 2,
+            int(io_id): int(conf.get("size", 1))
+            for io_id, conf in self.profile.get("io", {}).items()
         }
 
         if add_gps_noise:
