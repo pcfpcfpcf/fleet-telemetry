@@ -282,6 +282,20 @@ Terminal B (simulator):
 python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816
 ```
 
+#### Alternative ways
+
+Terminal B (bridge)
+
+````powershell
+py -u game_bridge.py --debug
+````
+
+Terminal C (monitor)
+
+````powershell
+py monitor.py --host 127.0.0.1 --port 8765 --interval 1
+````
+
 Controls: WASD/arrow keys, Ctrl+C to stop.
 
 ### Simulator files at a glance
