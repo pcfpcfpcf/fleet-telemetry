@@ -2,8 +2,6 @@ name: Demo Smoke Pipeline
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NATS_ADAPTER_PASSWORD: ${{ secrets.NATS_ADAPTER_PASSWORD }}
-  NATS_L4_PASSWORD: ${{ secrets.NATS_L4_PASSWORD }}
 
 on:
   push:
@@ -23,6 +21,8 @@ jobs:
       TIMESCALE_USER: ${{ secrets.TIMESCALE_USER }}
       TIMESCALE_PASSWORD: ${{ secrets.TIMESCALE_PASSWORD }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NATS_ADAPTER_PASSWORD: ${{ secrets.NATS_ADAPTER_PASSWORD }}
+      NATS_L4_PASSWORD: ${{ secrets.NATS_L4_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -270,6 +270,8 @@ jobs:
       ODOO_DB: ${{ secrets.ODOO_DB }}
       ODOO_USER: ${{ secrets.ODOO_USER }}
       ODOO_PASSWORD: ${{ secrets.ODOO_PASSWORD }}
+      NATS_ADAPTER_PASSWORD: ${{ secrets.NATS_ADAPTER_PASSWORD }}
+      NATS_L4_PASSWORD: ${{ secrets.NATS_L4_PASSWORD }}
 
     steps:
       - name: Checkout
