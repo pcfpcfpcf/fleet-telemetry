@@ -16,6 +16,11 @@ jobs:
   smoke-test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TIMESCALE_DB: ${{ secrets.TIMESCALE_DB }}
+      TIMESCALE_USER: ${{ secrets.TIMESCALE_USER }}
+      TIMESCALE_PASSWORD: ${{ secrets.TIMESCALE_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - name: Checkout
@@ -255,6 +260,14 @@ jobs:
   odoo-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      TIMESCALE_DB: ${{ secrets.TIMESCALE_DB }}
+      TIMESCALE_USER: ${{ secrets.TIMESCALE_USER }}
+      TIMESCALE_PASSWORD: ${{ secrets.TIMESCALE_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ODOO_DB: ${{ secrets.ODOO_DB }}
+      ODOO_USER: ${{ secrets.ODOO_USER }}
+      ODOO_PASSWORD: ${{ secrets.ODOO_PASSWORD }}
 
     steps:
       - name: Checkout
