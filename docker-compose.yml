@@ -132,9 +132,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: fleet
-      POSTGRES_USER: fleet
-      POSTGRES_PASSWORD: fleet
+      POSTGRES_DB: ${TIMESCALE_DB}
+      POSTGRES_USER: ${TIMESCALE_USER}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD}
       POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=timescaledb"
     volumes:
       - ./data/timescaledb:/var/lib/postgresql/data
@@ -165,7 +165,7 @@ services:
       - "3001:3001"    # WebSocket
     environment:
       NATS_URL: nats://nats:4222
-      DATABASE_URL: postgresql://fleet:fleet@timescaledb:5432/fleet
+      DATABASE_URL: ${DATABASE_URL}
       PORT: 3000
       WS_PORT: 3001
       NODE_ENV: development
@@ -195,8 +195,8 @@ services:
     environment:
       HOST: odoo-db
       PORT: 5432
-      USER: odoo
-      PASSWORD: odoo
+      USER: ${ODOO_USER}
+      PASSWORD: ${ODOO_PASSWORD}
       ADDONS_PATH: /usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
     volumes:
       - ./data/odoo:/var/lib/odoo
@@ -220,9 +220,9 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_DB: odoo
-      POSTGRES_USER: odoo
-      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: ${ODOO_DB}
+      POSTGRES_USER: ${ODOO_USER}
+      POSTGRES_PASSWORD: ${ODOO_PASSWORD}
     volumes:
       - ./data/odoo-db:/var/lib/postgresql/data
     networks:
