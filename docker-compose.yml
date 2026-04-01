@@ -207,6 +207,7 @@ services:
       PORT: 5432
       USER: ${ODOO_USER}
       PASSWORD: ${ODOO_PASSWORD}
+      L4_API_KEY: ${API_KEY}
       ADDONS_PATH: /usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
     volumes:
       - ./data/odoo:/var/lib/odoo
