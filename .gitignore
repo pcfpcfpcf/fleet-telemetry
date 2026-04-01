@@ -61,6 +61,7 @@ Thumbs.db
 
 # C
 main
+adapter/adapter
 
 #env
 .env

@@ -1,22 +1,38 @@
-FROM node:18-alpine
+FROM debian:bookworm-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ libc6-dev make cmake git ca-certificates \
+    libmosquitto-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build nats.c from source
+WORKDIR /tmp/nats
+RUN git clone --depth 1 https://github.com/nats-io/nats.c.git . && \
+    mkdir build && cd build && \
+    cmake .. -DNATS_BUILD_STREAMING=OFF -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && \
+    make install
+
+WORKDIR /build
+COPY *.c *.h ./
+RUN gcc -Wall -Wextra -O2 -o adapter \
+    main.c decoder.c nats-pub.c mqtt-sub.c \
+    -I/usr/local/include -L/usr/local/lib \
+    -lnats -lmosquitto
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libmosquitto1 curl libssl3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY --from=builder /usr/local/lib/libnats.so* /usr/local/lib/
+RUN ldconfig
 
-# curl is used by docker-compose healthcheck.
-RUN apk add --no-cache curl
+COPY --from=builder /build/adapter .
 
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install --production
-
-# Copy adapter script
-COPY adapter.js .
-
-# Health check: adapter logs to stdout, so we check process is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD node -e "console.log('ok')" || exit 1
+  CMD pgrep adapter || exit 1
 
-# Run adapter
-CMD ["npm", "start"]
+CMD ["./adapter"]
