@@ -1,6 +1,8 @@
 #include "decoder.h"
+#include "nats-pub.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static int hex2bin(const char *hex, uint8_t *out) {
     int len = 0;
@@ -12,7 +14,14 @@ static int hex2bin(const char *hex, uint8_t *out) {
     return len;
 }
 
-int main(void) {
+int main() {
+    const char *nats_url = getenv("NATS_URL");
+    if (!nats_url) nats_url = "nats://localhost:4222";
+
+    if (nats_pub_init(nats_url) != 0) {
+        fprintf(stderr, "Failed to initialize NATS, continuing locally...\n");
+    }
+
     const char *examples[] = {
         "000000000000003608010000016B40D8EA30010000000000000000000000000000000105021503010101425E0F01F10000601A014E0000000000000000010000C7CF",
         "000000000000002808010000016B40D9AD80010000000000000000000000000000000103021503010101425E100000010000F22A",
@@ -26,10 +35,13 @@ int main(void) {
         int len = hex2bin(examples[i], buf);
         AVLPacket pkt;
         printf("=== Example %d ===\n", i+1);
-        if (decode_packet(buf, len, &pkt) == 0)
+        if (decode_packet(buf, len, &pkt) == 0) {
             print_packet(&pkt);
-        else
+            nats_pub_packet(&pkt);
+        } else {
             printf("  decode error\n");
+        }
     }
+    nats_pub_close();
     return 0;
 }

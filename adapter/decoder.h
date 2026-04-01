@@ -1,3 +1,6 @@
+#ifndef DECODER_H
+#define DECODER_H
+
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -33,6 +36,7 @@ typedef struct {
     int       count;
 } AVLPacket;
 
-// forward declarations
 int  decode_packet (const uint8_t *buf, int len, AVLPacket *out);
 void print_packet  (const AVLPacket *p);
+
+#endif
