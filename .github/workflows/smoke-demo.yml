@@ -293,6 +293,168 @@ jobs:
           docker network rm fleet-network >/dev/null 2>&1 || true
           true
 
+  python-fmc003-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Show Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Prepare writable bind-mount directories
+        run: |
+          set -euo pipefail
+          mkdir -p data/emqx certs logs
+          chmod -R 777 data certs logs
+          ls -ld data data/emqx certs logs
+
+      - name: Generate mTLS certs for EMQX
+        run: |
+          set -euo pipefail
+          rm -f certs/*
+
+          openssl genrsa -out certs/ca.key 4096
+          openssl req -new -x509 -days 3650 -key certs/ca.key -out certs/ca.crt -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=FleetCA"
+
+          openssl genrsa -out certs/server.key 2048
+          openssl req -new -key certs/server.key -out certs/server.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=emqx"
+          openssl x509 -req -days 825 -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt
+
+          ls -la certs
+
+      - name: Start EMQX only
+        run: |
+          docker compose up -d emqx
+
+      - name: Wait for EMQX to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=240
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose ps -q emqx)
+            if [ -z "$cid" ]; then
+              echo "emqx container not found"
+              docker compose ps
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "emqx is healthy"
+              exit 0
+            fi
+            echo "Waiting for emqx to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose logs --tail 80 emqx || true
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "emqx did not become healthy in time"
+          docker inspect "$cid" || true
+          docker compose logs --tail 200 emqx
+          exit 1
+
+      - name: Install Python MQTT client
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install paho-mqtt
+
+      - name: Start TCP demo server
+        run: |
+          python3 -u simulator/demo_server.py > logs/demo-server.log 2>&1 &
+          echo $! > logs/demo-server.pid
+
+      - name: Start MQTT capture subscriber
+        run: |
+          printf '%s\n' \
+            'import paho.mqtt.client as mqtt' \
+            '' \
+            'def on_connect(client, userdata, flags, reason_code, properties=None):' \
+            '    client.subscribe("teltonika/+/codec8/raw", qos=1)' \
+            '' \
+            'def on_message(client, userdata, msg):' \
+            '    print(f"TOPIC={msg.topic}")' \
+            '    print(f"BYTES={len(msg.payload)}")' \
+            '    print(msg.payload[:32].hex())' \
+            '    client.disconnect()' \
+            '' \
+            'client = mqtt.Client(' \
+            '    callback_api_version=mqtt.CallbackAPIVersion.VERSION2,' \
+            '    client_id="ci-mqtt-sub",' \
+            ')' \
+            'client.on_connect = on_connect' \
+            'client.on_message = on_message' \
+            'client.connect("127.0.0.1", 1883, 60)' \
+            'client.loop_forever()' \
+            > /tmp/mqtt_sub.py
+          python3 /tmp/mqtt_sub.py > logs/mqtt-sub.log 2>&1 &
+          echo $! > logs/mqtt-sub.pid
+
+      - name: Start Python FMC003 simulator in replay mode
+        run: |
+          python3 -u simulator/main.py \
+            --host 127.0.0.1 \
+            --port 5055 \
+            --imei 352093114305816 \
+            --replay-hex-file simulator/sample_packets.hex \
+            --replay-loop \
+            --replay-interval 1 \
+            --mqtt-host 127.0.0.1 \
+            --mqtt-port 1883 \
+            --mqtt-raw-topic "teltonika/{imei}/codec8/raw" \
+            --mqtt-compat-topic "" \
+            --debug > logs/python-sim.log 2>&1 &
+          echo $! > logs/python-sim.pid
+
+      - name: Wait for MQTT and TCP evidence
+        run: |
+          set -euo pipefail
+
+          timeout_secs=120
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            if grep -q "TOPIC=teltonika/352093114305816/codec8/raw" logs/mqtt-sub.log 2>/dev/null; then
+              break
+            fi
+            sleep 2
+            elapsed=$((elapsed + 2))
+          done
+
+          if ! grep -q "TOPIC=teltonika/352093114305816/codec8/raw" logs/mqtt-sub.log 2>/dev/null; then
+            echo "MQTT raw topic was not captured"
+            cat logs/mqtt-sub.log || true
+            cat logs/python-sim.log || true
+            exit 1
+          fi
+
+          if ! grep -q "\[demo-server\] packet=" logs/demo-server.log 2>/dev/null; then
+            echo "Demo server did not receive Codec 8 packets"
+            cat logs/demo-server.log || true
+            cat logs/python-sim.log || true
+            exit 1
+          fi
+
+          echo "=== MQTT SUB LOG ==="
+          tail -n 20 logs/mqtt-sub.log || true
+          echo "=== PYTHON SIM LOG ==="
+          tail -n 40 logs/python-sim.log || true
+          echo "=== DEMO SERVER LOG ==="
+          tail -n 40 logs/demo-server.log || true
+
+      - name: Teardown
+        if: always()
+        run: |
+          set +e
+          if [ -f logs/python-sim.pid ]; then kill "$(cat logs/python-sim.pid)" >/dev/null 2>&1 || true; fi
+          if [ -f logs/mqtt-sub.pid ]; then kill "$(cat logs/mqtt-sub.pid)" >/dev/null 2>&1 || true; fi
+          if [ -f logs/demo-server.pid ]; then kill "$(cat logs/demo-server.pid)" >/dev/null 2>&1 || true; fi
+          docker compose down -v --remove-orphans || true
+
   odoo-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 35

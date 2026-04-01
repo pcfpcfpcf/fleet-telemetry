@@ -22,3 +22,11 @@
 - Demo_server.py (listening on 5055)
 
 **Immediate Fix:** Make the 502 response include the actual exception details so we can see what's failing in ingest().
+
+
+to run the standalone
+
+powershell
+````
+python simulator/standalone_fmc.py --interval "time"
+````
