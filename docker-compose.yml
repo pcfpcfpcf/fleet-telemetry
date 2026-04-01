@@ -148,9 +148,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER} -d ${TIMESCALE_DB}"]
       interval: 30s
-      timeout: 20s
-      retries: 15
-      start_period: 60s
+      timeout: 30s
+      retries: 20
+      start_period: 120s
     restart: unless-stopped
 
   # L4 Processing: Node.js Service
@@ -172,6 +172,8 @@ services:
       NATS_USER: l4service
       NATS_PASS: ${NATS_L4_PASSWORD}
       DATABASE_URL: ${DATABASE_URL}
+      API_KEY: ${API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       PORT: 3000
       WS_PORT: 3001
       NODE_ENV: development
@@ -205,6 +207,7 @@ services:
       PORT: 5432
       USER: ${ODOO_USER}
       PASSWORD: ${ODOO_PASSWORD}
+      L4_API_KEY: ${API_KEY}
       ADDONS_PATH: /usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
     volumes:
       - ./data/odoo:/var/lib/odoo

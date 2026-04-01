@@ -79,7 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_telemetry_received_at
 
 -- Create alerts table (for triggered alerts)
 CREATE TABLE IF NOT EXISTS alerts (
-  alert_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_id UUID NOT NULL DEFAULT gen_random_uuid(),
   device_id TEXT NOT NULL,
   timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   alert_type TEXT NOT NULL, -- 'SPEED_EXCEEDED', 'GEOFENCE', 'FUEL_LOW', 'IGNITION_OFF', etc.
@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS alerts (
   event_id UUID,
   acknowledged BOOLEAN DEFAULT FALSE,
   acknowledged_at TIMESTAMPTZ,
-  metadata JSONB
+  metadata JSONB,
+  PRIMARY KEY (alert_id, timestamp)
 );
 
 -- Convert alerts to hypertable for time-series queries
@@ -114,14 +115,15 @@ CREATE INDEX IF NOT EXISTS idx_alerts_unacknowledged
 
 -- Create audit log table
 CREATE TABLE IF NOT EXISTS audit_log (
-  log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  log_id UUID NOT NULL DEFAULT gen_random_uuid(),
   timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   action TEXT NOT NULL, -- 'INSERT', 'UPDATE', 'DELETE', 'ALERT_TRIGGERED', etc.
   entity_type TEXT, -- 'telemetry', 'alert', 'device', etc.
   entity_id TEXT,
   details JSONB,
   user_id TEXT,
-  ip_address INET
+  ip_address INET,
+  PRIMARY KEY (log_id, timestamp)
 );
 
 -- Convert audit log to hypertable
