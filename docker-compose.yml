@@ -10,8 +10,10 @@ services:
         condition: service_healthy
     environment:
       MQTT_HOST: emqx
-      MQTT_PORT: 1883
-      MQTT_PROTOCOL: mqtt
+      MQTT_PORT: 8883
+      MQTT_PROTOCOL: mqtts
+    volumes:
+      - ./certs:/certs:ro
     networks:
       - fleet-network
     restart: unless-stopped
@@ -32,6 +34,8 @@ services:
       EMQX_LOG__CONSOLE__LEVEL: "warning"
     volumes:
       - ./data/emqx:/opt/emqx/data
+      - ./certs:/opt/emqx/certs:ro
+      - ./config/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
     networks:
       - fleet-network
     healthcheck:
@@ -107,6 +111,8 @@ services:
       MQTT_PORT: 1883
       MQTT_PROTOCOL: mqtt
       NATS_URL: nats://nats:4222
+      NATS_USER: adapter
+      NATS_PASS: ${NATS_ADAPTER_PASSWORD}
     networks:
       - fleet-network
     healthcheck:
@@ -132,9 +138,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: fleet
-      POSTGRES_USER: fleet
-      POSTGRES_PASSWORD: fleet
+      POSTGRES_DB: ${TIMESCALE_DB}
+      POSTGRES_USER: ${TIMESCALE_USER}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD}
       POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=timescaledb"
     volumes:
       - ./data/timescaledb:/var/lib/postgresql/data
@@ -142,7 +148,7 @@ services:
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fleet -d fleet || (echo 'Healthcheck failed:'; pg_isready -U fleet -d fleet; exit 1)"]
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER} -d ${TIMESCALE_DB}"]
       interval: 30s
       timeout: 20s
       retries: 15
@@ -165,7 +171,9 @@ services:
       - "3001:3001"    # WebSocket
     environment:
       NATS_URL: nats://nats:4222
-      DATABASE_URL: postgresql://fleet:fleet@timescaledb:5432/fleet
+      NATS_USER: l4service
+      NATS_PASS: ${NATS_L4_PASSWORD}
+      DATABASE_URL: ${DATABASE_URL}
       PORT: 3000
       WS_PORT: 3001
       NODE_ENV: development
@@ -195,8 +203,8 @@ services:
     environment:
       HOST: odoo-db
       PORT: 5432
-      USER: odoo
-      PASSWORD: odoo
+      USER: ${ODOO_USER}
+      PASSWORD: ${ODOO_PASSWORD}
       ADDONS_PATH: /usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
     volumes:
       - ./data/odoo:/var/lib/odoo
@@ -220,15 +228,15 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_DB: odoo
-      POSTGRES_USER: odoo
-      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: ${ODOO_DB}
+      POSTGRES_USER: ${ODOO_USER}
+      POSTGRES_PASSWORD: ${ODOO_PASSWORD}
     volumes:
       - ./data/odoo-db:/var/lib/postgresql/data
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U odoo -d odoo"]
+      test: ["CMD-SHELL", "pg_isready -U ${ODOO_USER} -d ${ODOO_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -61,3 +61,9 @@ Thumbs.db
 
 # C
 main
+.env
+certs/*.key
+certs/*.csr
+
+certs/*.key
+certs/*.csr

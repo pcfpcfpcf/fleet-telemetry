@@ -11,22 +11,46 @@ class FleetTelemetryDashboard extends Component {
             loading: true,
         });
         this._refreshInterval = null;
-        this._mapInitialized = false;
-        
+
         onMounted(async () => {
+            // Always wipe any leftover Chart.js instances on the canvases
+            // from a previous mount — this is what causes blank charts on
+            // navigate-away/back. Chart.js stores state on the canvas element
+            // itself and refuses to re-init if it thinks one already exists.
+            this._destroyCharts();
+
+            // Also wipe Leaflet — same issue: the map div retains its
+            // _leafletMap reference from the previous mount so renderMap()
+            // sees it as "already initialized" and skips tile layer setup.
+            this._destroyMap();
+
             await this.loadData();
             this._refreshInterval = setInterval(() => this.loadData(), 30000);
         });
-        
+
         onWillUnmount(() => {
             clearInterval(this._refreshInterval);
-            // Cleanup map instance
-            const mapEl = document.getElementById("fleetMap");
-            if (mapEl && mapEl._leafletMap) {
-                mapEl._leafletMap.remove();
-                mapEl._leafletMap = null;
-            }
+            this._destroyCharts();
+            this._destroyMap();
         });
+    }
+
+    _destroyCharts() {
+        ["speedChart", "fuelChart", "ignitionChart"].forEach(id => {
+            const canvas = document.getElementById(id);
+            if (!canvas) return;
+            // Chart.js 3+: getChart returns existing instance for a canvas
+            const existing = Chart.getChart(canvas);
+            if (existing) existing.destroy();
+        });
+    }
+
+    _destroyMap() {
+        const mapEl = document.getElementById("fleetMap");
+        if (mapEl && mapEl._leafletMap) {
+            mapEl._leafletMap.remove();
+            mapEl._leafletMap = null;
+        }
     }
 
     async loadData() {
@@ -37,17 +61,24 @@ class FleetTelemetryDashboard extends Component {
         );
         this.state.vehicles = records;
         this.state.loading = false;
-        
-        // Wait for DOM to update before rendering charts and map
-        setTimeout(() => this.renderCharts(), 0);
+
+        // Double rAF: waits for OWL to flush the t-if/t-else DOM swap
+        // before we try to draw into the canvas/map elements.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                this.renderCharts();
+            });
+        });
     }
 
     get totalVehicles() { return this.state.vehicles.length; }
     get activeVehicles() { return this.state.vehicles.filter(v => v.ignition).length; }
+
     get avgSpeed() {
         if (!this.state.vehicles.length) return 0;
         return (this.state.vehicles.reduce((s, v) => s + v.speed, 0) / this.state.vehicles.length).toFixed(1);
     }
+
     get avgFuel() {
         if (!this.state.vehicles.length) return 0;
         return (this.state.vehicles.reduce((s, v) => s + v.fuel_level, 0) / this.state.vehicles.length).toFixed(1);
@@ -64,10 +95,13 @@ class FleetTelemetryDashboard extends Component {
     renderSpeedChart() {
         const canvas = document.getElementById("speedChart");
         if (!canvas) return;
-        if (canvas._chartInstance) canvas._chartInstance.destroy();
+        // Use Chart.getChart() instead of a custom property — more reliable
+        const existing = Chart.getChart(canvas);
+        if (existing) existing.destroy();
+
         const labels = this.state.vehicles.map(v => v.device_id);
         const data = this.state.vehicles.map(v => v.speed);
-        canvas._chartInstance = new Chart(canvas, {
+        new Chart(canvas, {
             type: "bar",
             data: {
                 labels,
@@ -89,10 +123,12 @@ class FleetTelemetryDashboard extends Component {
     renderFuelChart() {
         const canvas = document.getElementById("fuelChart");
         if (!canvas) return;
-        if (canvas._chartInstance) canvas._chartInstance.destroy();
+        const existing = Chart.getChart(canvas);
+        if (existing) existing.destroy();
+
         const labels = this.state.vehicles.map(v => v.device_id);
         const data = this.state.vehicles.map(v => v.fuel_level);
-        canvas._chartInstance = new Chart(canvas, {
+        new Chart(canvas, {
             type: "bar",
             data: {
                 labels,
@@ -102,7 +138,7 @@ class FleetTelemetryDashboard extends Component {
                     backgroundColor: data.map(v =>
                         v < 20 ? "rgba(239,68,68,0.8)" :
                         v < 50 ? "rgba(245,158,11,0.8)" :
-                        "rgba(16,185,129,0.8)"
+                                 "rgba(16,185,129,0.8)"
                     ),
                     borderRadius: 6,
                 }]
@@ -118,10 +154,12 @@ class FleetTelemetryDashboard extends Component {
     renderIgnitionChart() {
         const canvas = document.getElementById("ignitionChart");
         if (!canvas) return;
-        if (canvas._chartInstance) canvas._chartInstance.destroy();
-        const on = this.state.vehicles.filter(v => v.ignition).length;
+        const existing = Chart.getChart(canvas);
+        if (existing) existing.destroy();
+
+        const on  = this.state.vehicles.filter(v => v.ignition).length;
         const off = this.state.vehicles.length - on;
-        canvas._chartInstance = new Chart(canvas, {
+        new Chart(canvas, {
             type: "doughnut",
             data: {
                 labels: ["Ignition On", "Ignition Off"],
@@ -130,39 +168,38 @@ class FleetTelemetryDashboard extends Component {
                     backgroundColor: ["rgba(16,185,129,0.8)", "rgba(239,68,68,0.8)"],
                 }]
             },
-            options: { responsive: true, plugins: { legend: { position: "bottom" } } }
+            options: {
+                responsive: true,
+                plugins: { legend: { position: "bottom" } }
+            }
         });
     }
 
     renderMap() {
         const mapEl = document.getElementById("fleetMap");
         if (!mapEl) return;
-        
-        // Check if Leaflet is loaded
-        if (typeof L === 'undefined') {
-            console.error("Leaflet library not loaded!");
-            return;
-        }
-        
-        // If map already exists, just update markers
+        if (typeof L === "undefined") { console.error("Leaflet not loaded"); return; }
+
+        // Always start fresh — _destroyMap() in onMounted ensures this is
+        // null on first render after navigation, so we always re-init cleanly.
         if (mapEl._leafletMap) {
             mapEl._leafletMap.remove();
+            mapEl._leafletMap = null;
         }
-        
-        // Calculate center point from vehicles
+
         const validVehicles = this.state.vehicles.filter(v => v.latitude && v.longitude);
         if (!validVehicles.length) return;
-        
+
         const avgLat = validVehicles.reduce((s, v) => s + v.latitude, 0) / validVehicles.length;
         const avgLng = validVehicles.reduce((s, v) => s + v.longitude, 0) / validVehicles.length;
-        
+
         const map = L.map(mapEl).setView([avgLat, avgLng], 10);
         mapEl._leafletMap = map;
-        
+
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             attribution: "© OpenStreetMap"
         }).addTo(map);
-        
+
         const bounds = [];
         validVehicles.forEach(v => {
             const color = v.ignition ? "green" : "red";
@@ -177,7 +214,7 @@ class FleetTelemetryDashboard extends Component {
             `);
             bounds.push([v.latitude, v.longitude]);
         });
-        
+
         if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
     }
 }

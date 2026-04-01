@@ -2,13 +2,48 @@
 <odoo>
     <data>
         <!-- ============================================ -->
-        <!-- TREE VIEW                                    -->
+        <!-- SEARCH VIEW                                  -->
+        <!-- ============================================ -->
+        <record id="view_fleet_vehicle_telemetry_search" model="ir.ui.view">
+            <field name="name">fleet.vehicle.telemetry.search</field>
+            <field name="model">fleet.vehicle.telemetry</field>
+            <field name="arch" type="xml">
+                <search string="Search Telemetry">
+                    <!-- Search fields -->
+                    <field name="device_id" string="Device ID" filter_domain="[('device_id', 'ilike', self)]"/>
+                    <field name="timestamp" string="Date"/>
+                    <field name="speed" string="Speed"/>
+                    
+                    <!-- Filters -->
+                    <filter string="Ignition On" name="ignition_on" domain="[('ignition', '=', True)]"/>
+                    <filter string="Ignition Off" name="ignition_off" domain="[('ignition', '=', False)]"/>
+                    <filter string="Low Fuel (&lt;20%)" name="low_fuel" domain="[('fuel_level', '&lt;', 20)]"/>
+                    <filter string="High Speed (&gt;80km/h)" name="high_speed" domain="[('speed', '&gt;', 80)]"/>
+                    <filter string="Today" name="today" domain="[('timestamp', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
+                    <filter string="Last 24 Hours" name="last_24h" domain="[('timestamp', '&gt;=', (context_today() - datetime.timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S'))]"/>
+                    
+                    <!-- Group By -->
+                    <group expand="0" string="Group By">
+                        <filter string="Device" name="group_by_device" context="{'group_by': 'device_id'}"/>
+                        <filter string="Date" name="group_by_date" context="{'group_by': 'timestamp:day'}"/>
+                        <filter string="Ignition Status" name="group_by_ignition" context="{'group_by': 'ignition'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- ============================================ -->
+        <!-- TREE VIEW (Enhanced with colors)             -->
         <!-- ============================================ -->
         <record id="view_fleet_vehicle_telemetry_tree" model="ir.ui.view">
             <field name="name">fleet.vehicle.telemetry.tree</field>
             <field name="model">fleet.vehicle.telemetry</field>
             <field name="arch" type="xml">
-                <tree string="Fleet Telemetry" default_order="timestamp desc">
+                <tree string="Fleet Telemetry" 
+                      default_order="timestamp desc"
+                      decoration-danger="fuel_level &lt; 20"
+                      decoration-warning="speed &gt; 80"
+                      decoration-success="ignition">
                     <field name="device_id"/>
                     <field name="timestamp"/>
                     <field name="latitude"/>

@@ -2,11 +2,11 @@
 
 /**
  * Fleet Telemetry Platform - MQTT to NATS Adapter
- * 
+ *
  * Bridges EMQX MQTT broker to NATS JetStream.
  * Reads normalized telemetry events from EMQX topics (telemetry/#)
  * and publishes them to NATS stream TELEMETRY.
- * 
+ *
  * This allows the simulator to send JSON to MQTT, which gets
  * forwarded to NATS for consumption by L4 processing service.
  */
@@ -23,6 +23,9 @@ const MQTT_PROTOCOL = process.env.MQTT_PROTOCOL || 'mqtt';
 
 const NATS_URL = process.env.NATS_URL || 'nats://localhost:4222';
 const sc = StringCodec();
+
+// ─── FIX 1: Payload size limit (100 KB) ──────────────────────────────────────
+const MAX_PAYLOAD_BYTES = 100 * 1024;
 
 // Normalized event schema validation
 const REQUIRED_FIELDS = {
@@ -53,6 +56,13 @@ const TELEMETRY_FIELDS = {
   engine_load: 'number',
 };
 
+// ─── FIX 2: device_id sanitization ───────────────────────────────────────────
+// NATS subject tokens must not contain . * > (wildcards/separators)
+// Allowed: alphanumeric, underscore, hyphen
+function sanitizeDeviceId(id) {
+  return String(id).replace(/[^a-zA-Z0-9_\-]/g, '_');
+}
+
 /**
  * Validate event against normalized schema
  * @param {object} event
@@ -73,26 +83,42 @@ function validateEvent(event) {
       actualType = 'array';
     }
 
-    if (actualType !== expectedType && expectedType !== 'number') {
-      if (expectedType === 'number' && isNaN(event[field])) {
-        errors.push(`Field ${field}: expected ${expectedType}, got ${actualType}`);
-      }
+    // ─── FIX 3: type check bug fixed ─────────────────────────────────────────
+    // Original code had a logic error that skipped number type validation entirely.
+    // Now all types including numbers are checked correctly.
+    if (actualType !== expectedType) {
+      errors.push(`Field ${field}: expected ${expectedType}, got ${actualType}`);
     }
   }
 
   // Validate position object
-  if (event.position) {
+  if (event.position && typeof event.position === 'object') {
     for (const [field, expectedType] of Object.entries(POSITION_FIELDS)) {
-      if (field in event.position) {
+      if (field in event.position && event.position[field] !== null) {
         if (typeof event.position[field] !== expectedType) {
           errors.push(`position.${field}: expected ${expectedType}, got ${typeof event.position[field]}`);
         }
       }
     }
+
+    // ─── FIX 4: value range validation ───────────────────────────────────────
+    const p = event.position;
+    if (p.lat !== null && p.lat !== undefined) {
+      if (p.lat < -90 || p.lat > 90) errors.push(`position.lat: out of range (-90 to 90), got ${p.lat}`);
+    }
+    if (p.lng !== null && p.lng !== undefined) {
+      if (p.lng < -180 || p.lng > 180) errors.push(`position.lng: out of range (-180 to 180), got ${p.lng}`);
+    }
+    if (p.speed !== null && p.speed !== undefined) {
+      if (p.speed < 0 || p.speed > 500) errors.push(`position.speed: out of range (0 to 500 km/h), got ${p.speed}`);
+    }
+    if (p.bearing !== null && p.bearing !== undefined) {
+      if (p.bearing < 0 || p.bearing > 360) errors.push(`position.bearing: out of range (0 to 360), got ${p.bearing}`);
+    }
   }
 
   // Validate telemetry object
-  if (event.telemetry) {
+  if (event.telemetry && typeof event.telemetry === 'object') {
     for (const [field, expectedType] of Object.entries(TELEMETRY_FIELDS)) {
       if (field in event.telemetry && event.telemetry[field] !== null) {
         if (typeof event.telemetry[field] !== expectedType) {
@@ -101,6 +127,21 @@ function validateEvent(event) {
           );
         }
       }
+    }
+
+    // ─── FIX 4 (continued): telemetry range validation ────────────────────────
+    const t = event.telemetry;
+    if (t.fuel_level !== null && t.fuel_level !== undefined) {
+      if (t.fuel_level < 0 || t.fuel_level > 100) errors.push(`telemetry.fuel_level: out of range (0 to 100), got ${t.fuel_level}`);
+    }
+    if (t.rpm !== null && t.rpm !== undefined) {
+      if (t.rpm < 0 || t.rpm > 20000) errors.push(`telemetry.rpm: out of range (0 to 20000), got ${t.rpm}`);
+    }
+    if (t.engine_load !== null && t.engine_load !== undefined) {
+      if (t.engine_load < 0 || t.engine_load > 100) errors.push(`telemetry.engine_load: out of range (0 to 100), got ${t.engine_load}`);
+    }
+    if (t.odometer !== null && t.odometer !== undefined) {
+      if (t.odometer < 0) errors.push(`telemetry.odometer: must not be negative, got ${t.odometer}`);
     }
   }
 
@@ -135,13 +176,17 @@ async function startAdapter() {
   let jetstreamManager;
 
   const publishToNats = async (event) => {
-    const natsSubject = `telemetry.raw.${event.device_id}`;
+    // ─── FIX 2 (applied): sanitize device_id before using in NATS subject ────
+    const safeDeviceId = sanitizeDeviceId(event.device_id);
+    const natsSubject = `telemetry.raw.${safeDeviceId}`;
     await jetstream.publish(natsSubject, sc.encode(JSON.stringify(event)));
   };
 
   try {
     natsConnection = await connect({
       servers: [NATS_URL],
+      user: process.env.NATS_USER,
+      pass: process.env.NATS_PASS,
       reconnect: true,
       maxReconnectAttempts: -1, // Infinite retries
       reconnectDelayHandler: () => 5000,
@@ -171,7 +216,9 @@ async function startAdapter() {
 
   // HTTP server for health and Traccar webhook ingestion.
   const app = express();
-  app.use(express.json());
+
+  // ─── FIX 1 (applied): limit incoming JSON body size ──────────────────────
+  app.use(express.json({ limit: MAX_PAYLOAD_BYTES }));
 
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok', ts: new Date().toISOString() });
@@ -207,6 +254,14 @@ async function startAdapter() {
         io_events: [],
         buffered: false,
       };
+
+      // ─── FIX 5: validate webhook events before publishing to NATS ──────────
+      const validation = validateEvent(event);
+      if (!validation.valid) {
+        console.error(`[ERROR] Webhook event validation failed for ${event.device_id}:`);
+        validation.errors.forEach((err) => console.error(`         - ${err}`));
+        return res.status(400).json({ error: 'validation failed', details: validation.errors });
+      }
 
       await publishToNats(event);
       return res.status(200).json({ ok: true, event_id: event.event_id });
@@ -260,6 +315,13 @@ async function startAdapter() {
 
   mqttClient.on('message', async (topic, message) => {
     messageCount++;
+
+    // ─── FIX 1 (applied to MQTT path): reject oversized MQTT payloads ────────
+    if (message.length > MAX_PAYLOAD_BYTES) {
+      console.error(`[ERROR] Oversized payload from ${topic}: ${message.length} bytes (max ${MAX_PAYLOAD_BYTES})`);
+      invalidCount++;
+      return;
+    }
 
     try {
       // Parse message
