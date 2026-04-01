@@ -1,19 +1,14 @@
-FROM node:18-alpine
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+RUN pip install --no-cache-dir paho-mqtt
 
-# Install dependencies
-RUN npm install --production
+COPY *.py ./
+COPY profiles/ profiles/
 
-# Copy simulator script
-COPY simulator.js .
-
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD node -e "console.log('ok')" || exit 1
+  CMD python -c "print('ok')" || exit 1
 
-# Run simulator
-CMD ["npm", "start"]
+ENTRYPOINT ["python", "main.py"]
+CMD ["--no-ui", "--debug", "--no-tcp", "--mqtt-host", "emqx", "--mqtt-port", "1883"]

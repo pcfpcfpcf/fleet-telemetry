@@ -133,15 +133,16 @@ class MqttMirror:
 
         self.args = args
 
-        # paho-mqtt 2.x deprecates callback API v1; explicitly request v2 when available.
+        # Ensure unique client IDs to prevent MQTT broker from kicking older sessions
+        default_client_id = f"fmc003-{args.imei}-{uuid4().hex[:8]}"
         callback_api = getattr(paho_mqtt, "CallbackAPIVersion", None)
         if callback_api is not None:
             self.client = paho_mqtt.Client(
                 callback_api_version=callback_api.VERSION2,
-                client_id=args.mqtt_client_id or f"fmc003-{args.imei}",
+                client_id=args.mqtt_client_id or default_client_id,
             )
         else:
-            self.client = paho_mqtt.Client(client_id=args.mqtt_client_id or f"fmc003-{args.imei}")
+            self.client = paho_mqtt.Client(client_id=args.mqtt_client_id or default_client_id)
         if args.mqtt_username:
             self.client.username_pw_set(args.mqtt_username, args.mqtt_password)
 
@@ -264,6 +265,7 @@ def render_dashboard(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Teltonika FMC003 high-fidelity emulator")
     parser.add_argument("--host", default="127.0.0.1", help="TCP server host")
+    parser.add_argument("--no-tcp", action="store_true", help="Disable TCP uplink (MQTT-only mode)")
     parser.add_argument("--port", type=int, default=5055, help="TCP server port")
     parser.add_argument("--imei", default="352093114305816", help="15-digit device IMEI")
     parser.add_argument("--latitude", type=float, default=36.8065, help="Initial latitude")
@@ -341,9 +343,11 @@ def main() -> int:
     if args.mqtt_host:
         mqtt_mirror = MqttMirror(args)
         mqtt_mirror.connect()
+        raw_topic = args.mqtt_raw_topic.format(imei=args.imei)
+        compat_topic = args.mqtt_compat_topic.format(imei=args.imei) if args.mqtt_compat_topic else "disabled"
         print(
             f"[sim] MQTT mirror enabled -> {args.mqtt_host}:{args.mqtt_port} "
-            f"raw={args.mqtt_raw_topic} compat={args.mqtt_compat_topic or 'disabled'}"
+            f"raw={raw_topic} compat={compat_topic}"
         )
 
     if args.replay_hex_file:
@@ -404,7 +408,7 @@ def main() -> int:
 
     controls = ControlState()
     keyboard_input = KeyboardInputLayer(controls)
-    client = TeltonikaTCPClient(host=args.host, port=args.port)
+    client = TeltonikaTCPClient(host=args.host, port=args.port) if not args.no_tcp else None
 
     pending_records: list[dict[str, Any]] = []
     last_record: dict[str, Any] | None = None
@@ -417,10 +421,11 @@ def main() -> int:
     next_send_at = last_tick
     next_ui_refresh = last_tick
 
-    keyboard_input.start()
+    if not args.no_ui:
+        keyboard_input.start()
     print(
         "[sim] Input active. Arrow keys/WASD to drive, I to toggle ignition. "
-        f"Target={args.host}:{args.port} IMEI={args.imei}"
+        f"Target={args.mqtt_host}:{args.mqtt_port} IMEI={args.imei}"
     )
 
     try:
@@ -450,35 +455,38 @@ def main() -> int:
                 packet = build_codec8_packet(to_send)
                 last_packet_size = len(packet)
 
-                try:
-                    if not connected:
-                        client.connect_and_login(args.imei, retries=1)
-                        connected = True
-                        if args.debug:
-                            print("[sim] Connected and authenticated")
+                if client is not None:
+                    try:
+                        if not connected:
+                            client.connect_and_login(args.imei, retries=1)
+                            connected = True
+                            if args.debug:
+                                print("[sim] Connected and authenticated")
 
-                    ack = client.send_avl_packet(packet, records_sent=send_count)
-                    last_ack = ack
-                    del pending_records[:ack]
+                        ack = client.send_avl_packet(packet, records_sent=send_count)
+                        last_ack = ack
+                        del pending_records[:ack]
+                    except (OSError, TimeoutError, ConnectionError) as exc:
+                        if connected or args.debug:
+                            print(f"[sim] Link issue ({exc}). Keeping {len(pending_records)} buffered records.")
+                        connected = False
+                        client.close()
 
-                    if mqtt_mirror is not None and last_record is not None:
-                        mqtt_mirror.publish_raw(packet)
-                        mqtt_mirror.publish_compat_event(last_record, buffered=len(pending_records) > 0)
+                if mqtt_mirror is not None and last_record is not None:
+                    mqtt_mirror.publish_raw(packet)
+                    mqtt_mirror.publish_compat_event(last_record, buffered=len(pending_records) > 0)
+                    if args.no_tcp:
+                        del pending_records[:send_count]
 
-                    if args.no_ui and args.debug and last_record is not None:
-                        print(
-                            "[sim] "
-                            f"lat={last_record['latitude']:.6f} "
-                            f"lon={last_record['longitude']:.6f} "
-                            f"speed={last_record['speed']:3d} "
-                            f"angle={last_record['angle']:3d} "
-                            f"ack={ack} buffer={len(pending_records)}"
-                        )
-                except (OSError, TimeoutError, ConnectionError) as exc:
-                    if connected or args.debug:
-                        print(f"[sim] Link issue ({exc}). Keeping {len(pending_records)} buffered records.")
-                    connected = False
-                    client.close()
+                if args.no_ui and args.debug and last_record is not None:
+                    print(
+                        "[sim] "
+                        f"lat={last_record['latitude']:.6f} "
+                        f"lon={last_record['longitude']:.6f} "
+                        f"speed={last_record['speed']:3d} "
+                        f"angle={last_record['angle']:3d} "
+                        f"buffer={len(pending_records)}"
+                    )
 
             if not args.no_ui and loop_start >= next_ui_refresh:
                 render_dashboard(
@@ -504,7 +512,8 @@ def main() -> int:
         print("\n[sim] Stopping simulator")
     finally:
         keyboard_input.stop()
-        client.close()
+        if client is not None:
+            client.close()
         if mqtt_mirror is not None:
             mqtt_mirror.close()
 
