@@ -28,10 +28,8 @@ services:
       - "8883:8883"    # MQTT over TLS (production)
       - "18083:18083"  # Admin dashboard
     environment:
-      EMQX_LISTENERS__TCP__DEFAULT__BIND: "0.0.0.0:1883"
-      EMQX_DASHBOARD__LISTENERS__HTTP__BIND: "0.0.0.0:18083"
       EMQX_AUTHORIZATION__NO_MATCH: "allow"
-      EMQX_LOG__CONSOLE__LEVEL: "warning"
+      EMQX_LOG_CONSOLE_LEVEL: "warning"
     volumes:
       - ./data/emqx:/opt/emqx/data
       - ./certs:/opt/emqx/certs:ro
@@ -177,6 +175,8 @@ services:
       PORT: 3000
       WS_PORT: 3001
       NODE_ENV: development
+      API_KEY: ${API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     networks:
       - fleet-network
     healthcheck:
