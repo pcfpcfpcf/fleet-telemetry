@@ -1,2 +1,3 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_fleet_vehicle_telemetry_user,access.fleet.vehicle.telemetry.user,model_fleet_vehicle_telemetry,base.group_user,1,1,1,1
+access_fleet_vehicle_telemetry_user,Fleet Vehicle Telemetry User,model_fleet_vehicle_telemetry,base.group_user,1,1,1,1
+access_fleet_vehicle_alert_user,Fleet Vehicle Alert User,model_fleet_vehicle_alert,base.group_user,1,1,1,1

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="view_fleet_vehicle_alert_tree" model="ir.ui.view">
+            <field name="name">fleet.vehicle.alert.tree</field>
+            <field name="model">fleet.vehicle.alert</field>
+            <field name="arch" type="xml">
+                <tree decoration-danger="severity == 'critical'" decoration-warning="severity == 'high'">
+                    <field name="device_id"/>
+                    <field name="alert_type"/>
+                    <field name="severity" widget="badge"
+                           decoration-danger="severity == 'critical'"
+                           decoration-warning="severity == 'high'"
+                           decoration-success="severity == 'low'"/>
+                    <field name="message"/>
+                    <field name="timestamp"/>
+                </tree>
+            </field>
+        </record>
+
+        <record id="view_fleet_vehicle_alert_form" model="ir.ui.view">
+            <field name="name">fleet.vehicle.alert.form</field>
+            <field name="model">fleet.vehicle.alert</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="device_id"/>
+                                <field name="alert_type"/>
+                                <field name="severity"/>
+                            </group>
+                            <group>
+                                <field name="timestamp"/>
+                                <field name="message"/>
+                            </group>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_fleet_vehicle_alerts" model="ir.actions.act_window">
+            <field name="name">Alerts</field>
+            <field name="res_model">fleet.vehicle.alert</field>
+            <field name="view_mode">tree,form</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    No alerts found. Alerts will appear here when telemetry rules trigger.
+                </p>
+            </field>
+        </record>
+
+        <menuitem id="menu_fleet_telemetry_alerts"
+                  name="Alerts"
+                  parent="fleet_telemetry_connector.menu_fleet_telemetry_root"
+                  action="action_fleet_vehicle_alerts"
+                  sequence="15"/>
+
+    </data>
+</odoo>

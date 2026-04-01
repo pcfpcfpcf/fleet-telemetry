@@ -16,6 +16,15 @@ jobs:
   smoke-test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TIMESCALE_DB: ${{ secrets.TIMESCALE_DB }}
+      TIMESCALE_USER: ${{ secrets.TIMESCALE_USER }}
+      TIMESCALE_PASSWORD: ${{ secrets.TIMESCALE_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NATS_ADAPTER_PASSWORD: ${{ secrets.NATS_ADAPTER_PASSWORD }}
+      NATS_L4_PASSWORD: ${{ secrets.NATS_L4_PASSWORD }}
+      API_KEY: ${{ secrets.API_KEY }}
+      ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
 
     steps:
       - name: Checkout
@@ -29,9 +38,27 @@ jobs:
       - name: Prepare writable bind-mount directories
         run: |
           set -euo pipefail
-          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db
+          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db certs
           chmod -R 777 data
           ls -ld data data/*
+
+      - name: Generate mTLS certs for EMQX and simulator
+        run: |
+          set -euo pipefail
+          rm -f certs/*
+
+          openssl genrsa -out certs/ca.key 4096
+          openssl req -new -x509 -days 3650 -key certs/ca.key -out certs/ca.crt -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=FleetCA"
+
+          openssl genrsa -out certs/server.key 2048
+          openssl req -new -key certs/server.key -out certs/server.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=emqx"
+          openssl x509 -req -days 825 -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt
+
+          openssl genrsa -out certs/simulator-client.key 2048
+          openssl req -new -key certs/simulator-client.key -out certs/simulator-client.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=simulator"
+          openssl x509 -req -days 825 -in certs/simulator-client.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/simulator-client.crt
+
+          ls -la certs
 
       - name: Clean timescaledb data directory (force fresh DB)
         run: |
@@ -51,38 +78,6 @@ jobs:
       - name: Wait for TimescaleDB to be healthy
         run: |
           set -euo pipefail
-          timeout_secs=180
-          elapsed=0
-          while [ "$elapsed" -lt "$timeout_secs" ]; do
-            cid=$(docker compose ps -q timescaledb)
-            if [ -z "$cid" ]; then
-              echo "timescaledb container not found"
-              docker compose ps
-              exit 1
-            fi
-            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
-            if [ "$status" = "healthy" ]; then
-              echo "timescaledb is healthy"
-              exit 0
-            fi
-            echo "Waiting for timescaledb to be healthy... (status: $status)"
-            docker inspect "$cid" || true
-            docker compose logs --tail 20 timescaledb || true
-            sleep 5
-            elapsed=$((elapsed + 5))
-          done
-          echo "timescaledb did not become healthy in time"
-          docker inspect "$cid" || true
-          docker compose logs --tail 100 timescaledb
-          exit 1
-
-      - name: Start remaining telemetry stack (L1-L4)
-        run: |
-          docker compose up -d emqx traccar nats adapter l4-service simulator
-
-      - name: Wait for timescaledb to be healthy
-        run: |
-          set -euo pipefail
           timeout_secs=300
           elapsed=0
           while [ "$elapsed" -lt "$timeout_secs" ]; do
@@ -99,20 +94,52 @@ jobs:
             fi
             echo "Waiting for timescaledb to be healthy... (status: $status)"
             docker inspect "$cid" || true
-            docker compose logs --tail 20 timescaledb || true
+            docker compose logs --tail 80 timescaledb || true
             sleep 5
             elapsed=$((elapsed + 5))
           done
           echo "timescaledb did not become healthy in time"
           docker inspect "$cid" || true
-          docker compose logs --tail 100 timescaledb
+          docker compose logs --tail 200 timescaledb
+          exit 1
+
+      - name: Start remaining telemetry stack (L1-L4)
+        run: |
+          docker compose up -d emqx traccar nats adapter l4-service simulator
+
+      - name: Wait for timescaledb to be healthy
+        run: |
+          set -euo pipefail
+          timeout_secs=480
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            cid=$(docker compose ps -q timescaledb)
+            if [ -z "$cid" ]; then
+              echo "timescaledb container not found"
+              docker compose ps
+              exit 1
+            fi
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+            if [ "$status" = "healthy" ]; then
+              echo "timescaledb is healthy"
+              exit 0
+            fi
+            echo "Waiting for timescaledb to be healthy... (status: $status)"
+            docker inspect "$cid" || true
+            docker compose logs --tail 80 timescaledb || true
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "timescaledb did not become healthy in time"
+          docker inspect "$cid" || true
+          docker compose logs --tail 200 timescaledb
           exit 1
 
       - name: Wait for services to be healthy
         run: |
           set -euo pipefail
           services=(emqx traccar nats timescaledb adapter l4-service)
-          timeout_secs=360
+          timeout_secs=540
           elapsed=0
 
           while [ "$elapsed" -lt "$timeout_secs" ]; do
@@ -152,13 +179,27 @@ jobs:
         run: |
           set -euo pipefail
           logs=$(docker logs fleet-adapter --tail 1200 2>&1 || true)
+          sim_logs=$(docker logs fleet-simulator --tail 400 2>&1 || true)
+          emqx_logs=$(docker logs fleet-emqx --tail 200 2>&1 || true)
+
+          echo "=== ADAPTER LOGS (tail) ==="
           echo "$logs" | tail -n 120
+          echo "=== SIMULATOR LOGS (tail) ==="
+          echo "$sim_logs" | tail -n 80
+          echo "=== EMQX LOGS (tail) ==="
+          echo "$emqx_logs" | tail -n 80
 
           for device in FMC003_SIM_001 FMC003_SIM_002 FMC003_SIM_003 FMC003_SIM_004 FMC003_SIM_005; do
-            echo "$logs" | grep -q "$device"
+            if ! echo "$logs" | grep -q "$device"; then
+              echo "Missing forwarded device in adapter logs: $device"
+              exit 1
+            fi
           done
 
-          echo "$logs" | grep -q "NATS"
+          if ! echo "$logs" | grep -q "NATS"; then
+            echo "Adapter logs did not include NATS forwarding evidence"
+            exit 1
+          fi
 
       - name: Validate TimescaleDB schema readiness
         run: |
@@ -186,7 +227,7 @@ jobs:
           # Poll vehicles endpoint because DB/consumer warm-up can briefly return 500.
           ok=false
           for i in $(seq 1 20); do
-            response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" http://localhost:3000/vehicles || true)
+            response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" -H "X-API-Key: $API_KEY" http://localhost:3000/vehicles || true)
             body=$(echo "$response" | sed '$d')
             code=$(echo "$response" | tail -n1 | sed 's/HTTP_STATUS://')
 
@@ -255,6 +296,18 @@ jobs:
   odoo-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      TIMESCALE_DB: ${{ secrets.TIMESCALE_DB }}
+      TIMESCALE_USER: ${{ secrets.TIMESCALE_USER }}
+      TIMESCALE_PASSWORD: ${{ secrets.TIMESCALE_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ODOO_DB: ${{ secrets.ODOO_DB }}
+      ODOO_USER: ${{ secrets.ODOO_USER }}
+      ODOO_PASSWORD: ${{ secrets.ODOO_PASSWORD }}
+      NATS_ADAPTER_PASSWORD: ${{ secrets.NATS_ADAPTER_PASSWORD }}
+      NATS_L4_PASSWORD: ${{ secrets.NATS_L4_PASSWORD }}
+      API_KEY: ${{ secrets.API_KEY }}
+      ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
 
     steps:
       - name: Checkout
@@ -268,9 +321,27 @@ jobs:
       - name: Prepare writable bind-mount directories
         run: |
           set -euo pipefail
-          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db
+          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db certs
           chmod -R 777 data
           ls -ld data data/*
+
+      - name: Generate mTLS certs for EMQX and simulator
+        run: |
+          set -euo pipefail
+          rm -f certs/*
+
+          openssl genrsa -out certs/ca.key 4096
+          openssl req -new -x509 -days 3650 -key certs/ca.key -out certs/ca.crt -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=FleetCA"
+
+          openssl genrsa -out certs/server.key 2048
+          openssl req -new -key certs/server.key -out certs/server.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=emqx"
+          openssl x509 -req -days 825 -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt
+
+          openssl genrsa -out certs/simulator-client.key 2048
+          openssl req -new -key certs/simulator-client.key -out certs/simulator-client.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=simulator"
+          openssl x509 -req -days 825 -in certs/simulator-client.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/simulator-client.crt
+
+          ls -la certs
 
       - name: Start services for Odoo integration test
         run: |

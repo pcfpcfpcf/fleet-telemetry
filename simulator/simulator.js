@@ -2,15 +2,19 @@
 
 /**
  * Fleet Telemetry Platform - GPS Device Simulator
- * 
- * Simulates 5 FMC003 GPS devices sending MQTT messages every 30 seconds
+ *
+ * Simulates 50 FMC003 GPS devices sending MQTT messages every 30 seconds
  * to EMQX broker. Used for local development and testing.
- * 
+ *
  * Payload format: Normalized event schema as per architecture specification
+ *
+ * mTLS: When MQTT_PROTOCOL=mqtts, connects on port 8883 using client cert/key
+ * and CA cert mounted at /certs inside the container.
  */
 
 const mqtt = require('mqtt');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 
 // Configuration
 const MQTT_HOST = process.env.MQTT_HOST || 'localhost';
@@ -18,44 +22,39 @@ const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
 const MQTT_PROTOCOL = process.env.MQTT_PROTOCOL || 'mqtt';
 const SEND_INTERVAL = 30000; // 30 seconds
 
-// Simulated vehicles - 5 fake devices around Tunis
-const devices = [
-  {
-    device_id: 'FMC003_SIM_001',
-    imei: '352093114305816',
-    name: 'Vehicle Alpha',
-    initialPosition: { lat: 36.8065, lng: 10.1815 }, // City center
-    baseFuel: 100,
-  },
-  {
-    device_id: 'FMC003_SIM_002',
-    imei: '352093114305817',
-    name: 'Vehicle Beta',
-    initialPosition: { lat: 36.7372, lng: 10.2352 }, // South
-    baseFuel: 85,
-  },
-  {
-    device_id: 'FMC003_SIM_003',
-    imei: '352093114305818',
-    name: 'Vehicle Gamma',
-    initialPosition: { lat: 36.8901, lng: 10.1234 }, // North
-    baseFuel: 70,
-  },
-  {
-    device_id: 'FMC003_SIM_004',
-    imei: '352093114305819',
-    name: 'Vehicle Delta',
-    initialPosition: { lat: 36.8200, lng: 10.0800 }, // West
-    baseFuel: 55,
-  },
-  {
-    device_id: 'FMC003_SIM_005',
-    imei: '352093114305820',
-    name: 'Vehicle Epsilon',
-    initialPosition: { lat: 36.8100, lng: 10.3000 }, // East
-    baseFuel: 40,
-  },
-];
+// ─── mTLS: load certs if using mqtts ─────────────────────────────────────────
+// Certs are mounted into the container at /certs by docker-compose.
+// If the protocol is plain mqtt, certs are not loaded and tls is not used.
+let tlsOptions = {};
+if (MQTT_PROTOCOL === 'mqtts') {
+  try {
+    tlsOptions = {
+      ca:   fs.readFileSync('/certs/ca.crt'),
+      cert: fs.readFileSync('/certs/simulator-client.crt'),
+      key:  fs.readFileSync('/certs/simulator-client.key'),
+      rejectUnauthorized: true,
+    };
+    console.log('[SIMULATOR] mTLS certs loaded successfully');
+  } catch (err) {
+    console.error('[SIMULATOR] Failed to load mTLS certs:', err.message);
+    console.error('[SIMULATOR] Make sure certs are mounted at /certs/');
+    process.exit(1);
+  }
+}
+
+// Generate 50 simulated vehicles around Tunis
+const devices = Array.from({ length: 50 }, (_, i) => {
+  const idx = i + 1;
+  const latBase = 36.8 + (Math.random() - 0.5) * 0.2;
+  const lngBase = 10.15 + (Math.random() - 0.5) * 0.25;
+  return {
+    device_id: `FMC003_SIM_${idx.toString().padStart(3, '0')}`,
+    imei: `35209311430${5800 + idx}`,
+    name: `Vehicle ${String.fromCharCode(65 + (idx - 1) % 26)}${idx}`,
+    initialPosition: { lat: latBase, lng: lngBase },
+    baseFuel: Math.round(40 + Math.random() * 60),
+  };
+});
 
 // Vehicle state (position, speed, fuel)
 const vehicleState = {};
@@ -64,42 +63,34 @@ devices.forEach(device => {
     lat: device.initialPosition.lat,
     lng: device.initialPosition.lng,
     fuel: device.baseFuel,
-    ignition: Math.random() > 0.3, // 70% of vehicles running
+    ignition: Math.random() > 0.3,
     odometer: Math.floor(Math.random() * 200000),
     rpm: 0,
     messagesSent: 0,
   };
 });
 
-/**
- * Randomize position with small drift (simulate vehicle movement)
- */
 function randomizePosition(lat, lng) {
-  const drift = 0.002; // ~200 meters in lat/lng degrees
+  const drift = 0.002;
   return {
     lat: lat + (Math.random() - 0.5) * drift,
     lng: lng + (Math.random() - 0.5) * drift,
   };
 }
 
-/**
- * Randomize speed (0-120 km/h)
- */
 function randomizeSpeed() {
   return Math.random() * 120;
 }
 
-/**
- * Randomize fuel level (slowly decreasing)
- */
 function updateFuel(currentFuel) {
-  const fuelBurn = Math.random() * 0.5; // Lose 0-0.5% per 30 seconds
-  return Math.max(0, currentFuel - fuelBurn);
+  const fuelBurn = Math.random() * 0.5;
+  let newFuel = Math.max(0, currentFuel - fuelBurn);
+  if (newFuel <= 0) {
+    newFuel = 60 + Math.random() * 40;
+  }
+  return newFuel;
 }
 
-/**
- * Generate normalized telemetry event schema
- */
 function generateEvent(device, state) {
   const position = randomizePosition(state.lat, state.lng);
   const speed = randomizeSpeed();
@@ -108,9 +99,8 @@ function generateEvent(device, state) {
   const fuel = updateFuel(state.fuel);
   const rpm = ignition ? Math.floor(Math.random() * 3000) + 600 : 0;
   const engineLoad = ignition ? Math.random() * 100 : 0;
-  const odometer = state.odometer + (speed / 3600) * 0.008; // Approximate km traveled in 30s
+  const odometer = state.odometer + (speed / 3600) * 0.008;
 
-  // Update state
   state.lat = position.lat;
   state.lng = position.lng;
   state.fuel = fuel;
@@ -129,7 +119,7 @@ function generateEvent(device, state) {
     position: {
       lat: position.lat,
       lng: position.lng,
-      altitude: 10.0 + Math.random() * 30, // 10-40 meters
+      altitude: 10.0 + Math.random() * 30,
       accuracy: 5.0 + Math.random() * 5,
       bearing,
       speed,
@@ -138,7 +128,7 @@ function generateEvent(device, state) {
       ignition,
       fuel_level: Math.round(fuel * 100) / 100,
       odometer: Math.round(odometer * 100) / 100,
-      rpm: rpm,
+      rpm,
       engine_load: Math.round(engineLoad * 100) / 100,
     },
     io_events: [],
@@ -146,18 +136,17 @@ function generateEvent(device, state) {
   };
 }
 
-/**
- * Connect to MQTT broker and start sending messages
- */
 function connectAndSimulate() {
   const clientUrl = `${MQTT_PROTOCOL}://${MQTT_HOST}:${MQTT_PORT}`;
   console.log(`[SIMULATOR] Connecting to MQTT broker at ${clientUrl}...`);
 
+  // ─── mTLS: pass tlsOptions when protocol is mqtts ────────────────────────
   const client = mqtt.connect(clientUrl, {
     reconnectPeriod: 5000,
     keepalive: 60,
     clean: true,
     clientId: `simulator-${process.pid}`,
+    ...tlsOptions,
   });
 
   client.on('connect', () => {
@@ -165,13 +154,11 @@ function connectAndSimulate() {
     console.log(`[SIMULATOR] Starting to simulate ${devices.length} GPS devices`);
     console.log(`[SIMULATOR] Sending messages every ${SEND_INTERVAL / 1000} seconds\n`);
 
-    // Start sending messages
     setInterval(() => {
       devices.forEach(device => {
         const state = vehicleState[device.device_id];
         const event = generateEvent(device, state);
 
-        // Publish to MQTT topic
         const topic = `telemetry/${device.device_id}/raw`;
         const payload = JSON.stringify(event);
 
@@ -206,7 +193,6 @@ function connectAndSimulate() {
     console.log('[WARNING] MQTT client went offline');
   });
 
-  // Graceful shutdown
   process.on('SIGTERM', () => {
     console.log('[SIMULATOR] Received SIGTERM, shutting down gracefully...');
     client.end(false, () => {
@@ -224,10 +210,9 @@ function connectAndSimulate() {
   });
 }
 
-// Start the simulator
-console.log('╔════════════════════════════════════════════════════════════╗');
-console.log('║   Fleet Telemetry Platform - GPS Device Simulator         ║');
-console.log('║   Local Development Environment                           ║');
-console.log('╚════════════════════════════════════════════════════════════╝\n');
+console.log('╔═══════════════════════════════════════════════════════════╗');
+console.log('║   Fleet Telemetry Platform - GPS Device Simulator        ║');
+console.log('║   Local Development Environment                          ║');
+console.log('╚═══════════════════════════════════════════════════════════╝\n');
 
 connectAndSimulate();

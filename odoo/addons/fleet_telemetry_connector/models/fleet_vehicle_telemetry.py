@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from datetime import datetime
 from urllib import error, request
 
@@ -8,10 +9,66 @@ from odoo import api, fields, models
 _logger = logging.getLogger(__name__)
 
 
+
 class FleetVehicleTelemetry(models.Model):
     _name = "fleet.vehicle.telemetry"
     _description = "Fleet Vehicle Telemetry"
     _rec_name = "device_id"
+
+    def _check_alerts(self):
+        Alert = self.env["fleet.vehicle.alert"]
+        for rec in self:
+            # Overspeed
+            if rec.speed and rec.speed > 120:
+                Alert.create({
+                    "device_id": rec.device_id,
+                    "alert_type": "overspeed",
+                    "message": f"Overspeed detected: {rec.speed} km/h",
+                    "severity": "high",
+                })
+            # Low fuel
+            if rec.fuel_level is not None and rec.fuel_level < 15:
+                Alert.create({
+                    "device_id": rec.device_id,
+                    "alert_type": "low_fuel",
+                    "message": f"Low fuel: {rec.fuel_level}%",
+                    "severity": "medium",
+                })
+            # Engine idle
+            if rec.ignition and rec.speed is not None and rec.speed < 5:
+                Alert.create({
+                    "device_id": rec.device_id,
+                    "alert_type": "idle_engine",
+                    "message": "Engine ON but vehicle not moving",
+                    "severity": "low",
+                })
+            # Invalid GPS
+            if not rec.latitude or not rec.longitude:
+                Alert.create({
+                    "device_id": rec.device_id,
+                    "alert_type": "invalid_gps",
+                    "message": "Invalid GPS coordinates",
+                    "severity": "high",
+                })
+
+    @api.model
+    def create(self, vals):
+        record = super().create(vals)
+        record._check_alerts()
+        return record
+
+    device_id = fields.Char(required=True, index=True)
+    latitude = fields.Float(digits=(10, 6))
+    longitude = fields.Float(digits=(10, 6))
+    speed = fields.Float()
+    fuel_level = fields.Float()
+    ignition = fields.Boolean()
+    timestamp = fields.Datetime()
+    payload = fields.Text()
+
+    _sql_constraints = [
+        ("fleet_vehicle_telemetry_device_unique", "unique(device_id)", "Device must be unique."),
+    ]
 
     device_id = fields.Char(required=True, index=True)
     latitude = fields.Float(digits=(10, 6))
@@ -37,7 +94,15 @@ class FleetVehicleTelemetry(models.Model):
     @api.model
     def _fetch_vehicles(self):
         url = f"{self._l4_base_url()}/vehicles"
-        req = request.Request(url, method="GET")
+        api_key = self.env["ir.config_parameter"].sudo().get_param(
+            "fleet_telemetry_connector.l4_api_key",
+            os.getenv("L4_API_KEY", os.getenv("API_KEY", "")),
+        )
+        headers = {"Accept": "application/json"}
+        if api_key:
+            headers["X-API-Key"] = api_key
+
+        req = request.Request(url, method="GET", headers=headers)
         try:
             with request.urlopen(req, timeout=10) as resp:
                 body = resp.read().decode("utf-8")
@@ -104,3 +169,4 @@ class FleetVehicleTelemetry(models.Model):
             "type": "ir.actions.client",
             "tag": "reload",
         }
+        
