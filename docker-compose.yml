@@ -188,15 +188,52 @@ services:
     restart: unless-stopped
 
   # L5 Presentation: Odoo 17
+  odoo-init:
+    image: odoo:17
+    user: root
+    container_name: fleet-odoo-init
+    command: >
+      bash -c "
+        if [ ! -f /var/lib/odoo/.initialized ]; then
+          echo 'Initializing Odoo database...' &&
+          odoo -d odoo --init=base --stop-after-init &&
+          touch /var/lib/odoo/.initialized &&
+          echo 'Init complete.'
+        else
+          echo 'Already initialized, skipping.'
+        fi
+      "
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+
+    environment:
+      HOST: odoo-db
+      PORT: 5432
+      USER: ${ODOO_USER}
+      PASSWORD: ${ODOO_PASSWORD}
+    volumes:
+      - ./data/odoo:/var/lib/odoo
+      - ./odoo/addons:/mnt/extra-addons
+      - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+    networks:
+      - fleet-network
+    restart: "no"
+    profiles:
+      - with-odoo
+
   odoo:
     image: odoo:17
+    user: root
     container_name: fleet-odoo
     depends_on:
+      odoo-init:
+        condition: service_completed_successfully
       odoo-db:
         condition: service_healthy
       l4-service:
         condition: service_healthy
-        required: false
+        required: false 
     ports:
       - "8069:8069"    # Web UI
       - "8072:8072"    # WebSocket/longpolling
@@ -210,6 +247,7 @@ services:
     volumes:
       - ./data/odoo:/var/lib/odoo
       - ./odoo/addons:/mnt/extra-addons
+      - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
     networks:
       - fleet-network
     healthcheck:
