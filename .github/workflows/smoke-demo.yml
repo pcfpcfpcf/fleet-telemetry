@@ -23,6 +23,8 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       NATS_ADAPTER_PASSWORD: ${{ secrets.NATS_ADAPTER_PASSWORD }}
       NATS_L4_PASSWORD: ${{ secrets.NATS_L4_PASSWORD }}
+      API_KEY: ${{ secrets.API_KEY }}
+      ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
 
     steps:
       - name: Checkout
@@ -193,7 +195,7 @@ jobs:
           # Poll vehicles endpoint because DB/consumer warm-up can briefly return 500.
           ok=false
           for i in $(seq 1 20); do
-            response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" http://localhost:3000/vehicles || true)
+            response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" -H "X-API-Key: $API_KEY" http://localhost:3000/vehicles || true)
             body=$(echo "$response" | sed '$d')
             code=$(echo "$response" | tail -n1 | sed 's/HTTP_STATUS://')
 
@@ -272,6 +274,8 @@ jobs:
       ODOO_PASSWORD: ${{ secrets.ODOO_PASSWORD }}
       NATS_ADAPTER_PASSWORD: ${{ secrets.NATS_ADAPTER_PASSWORD }}
       NATS_L4_PASSWORD: ${{ secrets.NATS_L4_PASSWORD }}
+      API_KEY: ${{ secrets.API_KEY }}
+      ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
 
     steps:
       - name: Checkout
