@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from datetime import datetime
 from urllib import error, request
 
@@ -93,7 +94,15 @@ class FleetVehicleTelemetry(models.Model):
     @api.model
     def _fetch_vehicles(self):
         url = f"{self._l4_base_url()}/vehicles"
-        req = request.Request(url, method="GET")
+        api_key = self.env["ir.config_parameter"].sudo().get_param(
+            "fleet_telemetry_connector.l4_api_key",
+            os.getenv("L4_API_KEY", os.getenv("API_KEY", "")),
+        )
+        headers = {"Accept": "application/json"}
+        if api_key:
+            headers["X-API-Key"] = api_key
+
+        req = request.Request(url, method="GET", headers=headers)
         try:
             with request.urlopen(req, timeout=10) as resp:
                 body = resp.read().decode("utf-8")

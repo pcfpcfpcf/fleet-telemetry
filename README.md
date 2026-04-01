@@ -258,6 +258,109 @@ docker compose down
 
 ---
 
+## Python FMC003 Simulator (Codec 8)
+
+This simulator sends Teltonika-style binary Codec 8 packets over TCP.
+
+### Quick start
+
+Install dependency once:
+
+```powershell
+python -m pip install pynput
+```
+
+Terminal A (packet inspector):
+
+```powershell
+python simulator/demo_server.py
+```
+
+Terminal B (simulator):
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816
+```
+
+#### Alternative ways
+
+Terminal B (bridge)
+
+````powershell
+py -u game_bridge.py --debug
+````
+
+Terminal C (monitor)
+
+````powershell
+py monitor.py --host 127.0.0.1 --port 8765 --interval 1
+````
+
+Controls: WASD/arrow keys, Ctrl+C to stop.
+
+### Simulator files at a glance
+
+- `simulator/main.py`: CLI device simulator entry point (connects, logs in, sends Codec 8 AVL).
+- `simulator/fmc003.py`: FMC003 behavior model (OBD-like metrics, events, geofence logic).
+- `simulator/encoder.py`: Codec 8 binary packet builder and CRC framing.
+- `simulator/network.py`: TCP session handling (IMEI login + AVL ACK flow).
+- `simulator/demo_server.py`: local packet inspector to verify what is actually sent.
+- `simulator/game_bridge.py`: HTTP bridge from MTA telemetry to Teltonika Codec 8 TCP.
+- `simulator/monitor.py`: terminal dashboard for devices, events, geofence status, and live stats.
+- `simulator/profiles/fmc003.default.json`: tuning profile (thresholds, geofences, IO mappings).
+- `simulator/mta_resource/`: MTA client/server Lua resource that publishes vehicle telemetry.
+
+### Most useful options
+
+```text
+--debug --no-ui --profile simulator/profiles/fmc003.default.json --no-gps-noise
+```
+
+Example:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --no-ui --debug --profile simulator/profiles/fmc003.default.json
+```
+
+### Replay real packets (byte-for-byte)
+
+Use replay mode if you want to transmit captured FMC003 packets exactly as-is:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --replay-hex-file .\packets.hex --debug
+```
+
+Loop replay:
+
+```powershell
+python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --replay-hex-file .\packets.hex --replay-loop --replay-interval 1.0 --debug
+```
+
+### MTA bridge (LAN)
+
+1. Start target receiver (Traccar on 5055 or local demo server).
+2. Start bridge:
+
+```powershell
+python simulator/game_bridge.py --listen-host 0.0.0.0 --listen-port 8765 --target-host 127.0.0.1 --target-port 5055 --debug
+```
+
+3. Copy `simulator/mta_resource` to MTA resources as `resources/fmc003_bridge/`.
+4. In MTA server console:
+
+```text
+refresh
+start fmc003_bridge
+```
+
+### Quick troubleshooting
+
+- If no traffic appears, kill duplicate Python processes and start only one bridge + one demo server.
+- If MTA client is remote, set bridge host in `simulator/mta_resource/client.lua` to bridge LAN IP (not 127.0.0.1).
+- If monitor shows data but bridge terminal does not, you are likely watching a different bridge process.
+
+---
+
 ## Reset From Scratch
 
 ```powershell
