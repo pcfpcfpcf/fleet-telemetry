@@ -38,9 +38,27 @@ jobs:
       - name: Prepare writable bind-mount directories
         run: |
           set -euo pipefail
-          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db
+          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db certs
           chmod -R 777 data
           ls -ld data data/*
+
+      - name: Generate mTLS certs for EMQX and simulator
+        run: |
+          set -euo pipefail
+          rm -f certs/*
+
+          openssl genrsa -out certs/ca.key 4096
+          openssl req -new -x509 -days 3650 -key certs/ca.key -out certs/ca.crt -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=FleetCA"
+
+          openssl genrsa -out certs/server.key 2048
+          openssl req -new -key certs/server.key -out certs/server.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=emqx"
+          openssl x509 -req -days 825 -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt
+
+          openssl genrsa -out certs/simulator-client.key 2048
+          openssl req -new -key certs/simulator-client.key -out certs/simulator-client.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=simulator"
+          openssl x509 -req -days 825 -in certs/simulator-client.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/simulator-client.crt
+
+          ls -la certs
 
       - name: Clean timescaledb data directory (force fresh DB)
         run: |
@@ -161,13 +179,27 @@ jobs:
         run: |
           set -euo pipefail
           logs=$(docker logs fleet-adapter --tail 1200 2>&1 || true)
+          sim_logs=$(docker logs fleet-simulator --tail 400 2>&1 || true)
+          emqx_logs=$(docker logs fleet-emqx --tail 200 2>&1 || true)
+
+          echo "=== ADAPTER LOGS (tail) ==="
           echo "$logs" | tail -n 120
+          echo "=== SIMULATOR LOGS (tail) ==="
+          echo "$sim_logs" | tail -n 80
+          echo "=== EMQX LOGS (tail) ==="
+          echo "$emqx_logs" | tail -n 80
 
           for device in FMC003_SIM_001 FMC003_SIM_002 FMC003_SIM_003 FMC003_SIM_004 FMC003_SIM_005; do
-            echo "$logs" | grep -q "$device"
+            if ! echo "$logs" | grep -q "$device"; then
+              echo "Missing forwarded device in adapter logs: $device"
+              exit 1
+            fi
           done
 
-          echo "$logs" | grep -q "NATS"
+          if ! echo "$logs" | grep -q "NATS"; then
+            echo "Adapter logs did not include NATS forwarding evidence"
+            exit 1
+          fi
 
       - name: Validate TimescaleDB schema readiness
         run: |
@@ -289,9 +321,27 @@ jobs:
       - name: Prepare writable bind-mount directories
         run: |
           set -euo pipefail
-          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db
+          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db certs
           chmod -R 777 data
           ls -ld data data/*
+
+      - name: Generate mTLS certs for EMQX and simulator
+        run: |
+          set -euo pipefail
+          rm -f certs/*
+
+          openssl genrsa -out certs/ca.key 4096
+          openssl req -new -x509 -days 3650 -key certs/ca.key -out certs/ca.crt -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=FleetCA"
+
+          openssl genrsa -out certs/server.key 2048
+          openssl req -new -key certs/server.key -out certs/server.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=emqx"
+          openssl x509 -req -days 825 -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt
+
+          openssl genrsa -out certs/simulator-client.key 2048
+          openssl req -new -key certs/simulator-client.key -out certs/simulator-client.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=simulator"
+          openssl x509 -req -days 825 -in certs/simulator-client.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/simulator-client.crt
+
+          ls -la certs
 
       - name: Start services for Odoo integration test
         run: |
