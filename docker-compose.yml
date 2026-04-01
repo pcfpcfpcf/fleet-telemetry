@@ -28,10 +28,8 @@ services:
       - "8883:8883"    # MQTT over TLS (production)
       - "18083:18083"  # Admin dashboard
     environment:
-      EMQX_LISTENERS__TCP__DEFAULT__BIND: "0.0.0.0:1883"
-      EMQX_DASHBOARD__LISTENERS__HTTP__BIND: "0.0.0.0:18083"
       EMQX_AUTHORIZATION__NO_MATCH: "allow"
-      EMQX_LOG__CONSOLE__LEVEL: "warning"
+      EMQX_LOG_CONSOLE_LEVEL: "warning"
     volumes:
       - ./data/emqx:/opt/emqx/data
       - ./certs:/opt/emqx/certs:ro
@@ -174,11 +172,11 @@ services:
       NATS_USER: l4service
       NATS_PASS: ${NATS_L4_PASSWORD}
       DATABASE_URL: ${DATABASE_URL}
-      API_KEY: ${API_KEY}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       PORT: 3000
       WS_PORT: 3001
       NODE_ENV: development
+      API_KEY: ${API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     networks:
       - fleet-network
     healthcheck:
@@ -190,15 +188,52 @@ services:
     restart: unless-stopped
 
   # L5 Presentation: Odoo 17
+  odoo-init:
+    image: odoo:17
+    user: root
+    container_name: fleet-odoo-init
+    command: >
+      bash -c "
+        if [ ! -f /var/lib/odoo/.initialized ]; then
+          echo 'Initializing Odoo database...' &&
+          odoo -d odoo --init=base --stop-after-init &&
+          touch /var/lib/odoo/.initialized &&
+          echo 'Init complete.'
+        else
+          echo 'Already initialized, skipping.'
+        fi
+      "
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+
+    environment:
+      HOST: odoo-db
+      PORT: 5432
+      USER: ${ODOO_USER}
+      PASSWORD: ${ODOO_PASSWORD}
+    volumes:
+      - ./data/odoo:/var/lib/odoo
+      - ./odoo/addons:/mnt/extra-addons
+      - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+    networks:
+      - fleet-network
+    restart: "no"
+    profiles:
+      - with-odoo
+
   odoo:
     image: odoo:17
+    user: root
     container_name: fleet-odoo
     depends_on:
+      odoo-init:
+        condition: service_completed_successfully
       odoo-db:
         condition: service_healthy
       l4-service:
         condition: service_healthy
-        required: false
+        required: false 
     ports:
       - "8069:8069"    # Web UI
       - "8072:8072"    # WebSocket/longpolling
@@ -212,6 +247,7 @@ services:
     volumes:
       - ./data/odoo:/var/lib/odoo
       - ./odoo/addons:/mnt/extra-addons
+      - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
     networks:
       - fleet-network
     healthcheck:
