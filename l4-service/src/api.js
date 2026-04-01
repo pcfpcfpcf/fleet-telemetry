@@ -2,6 +2,18 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { pool } from './db.js';
 
+// ─── FIX 1: device_id validation helper ──────────────────────────────────────
+// Accepts only alphanumeric, underscore, hyphen — matches adapter sanitization.
+// Max 64 chars to prevent oversized DB queries.
+function isValidDeviceId(id) {
+  return typeof id === 'string' && id.length > 0 && id.length <= 64 && /^[a-zA-Z0-9_\-]+$/.test(id);
+}
+
+// ─── FIX 2: safe error response — never leak internal error details ───────────
+function internalError(res) {
+  res.status(500).json({ error: 'internal server error' });
+}
+
 export function startApi() {
   const app = express();
   app.use(express.json());
@@ -20,11 +32,19 @@ export function startApi() {
       `);
       res.json(rows);
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      // ─── FIX 2 applied: log internally, never send e.message to client ──────
+      console.error('[L4] GET /vehicles error:', e.message);
+      internalError(res);
     }
   });
 
   app.get('/vehicles/:id/telemetry', async (req, res) => {
+    // ─── FIX 1 applied: validate device_id before using it ───────────────────
+    const deviceId = req.params.id;
+    if (!isValidDeviceId(deviceId)) {
+      return res.status(400).json({ error: 'invalid device id' });
+    }
+
     try {
       const { rows } = await pool.query(
         `
@@ -34,11 +54,12 @@ export function startApi() {
         ORDER BY timestamp DESC
         LIMIT 500
       `,
-        [req.params.id]
+        [deviceId]
       );
       res.json(rows);
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      console.error('[L4] GET /vehicles/:id/telemetry error:', e.message);
+      internalError(res);
     }
   });
 
@@ -52,7 +73,8 @@ export function startApi() {
       `);
       res.json(rows);
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      console.error('[L4] GET /alerts error:', e.message);
+      internalError(res);
     }
   });
 
@@ -66,7 +88,40 @@ export function startApi() {
   wss.on('connection', (ws) => {
     clients.add(ws);
     console.log('[L4] WebSocket client connected, total:', clients.size);
-    ws.on('close', () => clients.delete(ws));
+
+    // ─── FIX 3: handle and validate incoming WebSocket messages ──────────────
+    // Previously the server accepted connections with zero message handling.
+    // Now incoming messages are parsed and validated — unknown types are ignored.
+    ws.on('message', (data) => {
+      try {
+        // Reject oversized messages (16 KB limit)
+        if (data.length > 16 * 1024) {
+          console.warn('[L4] WebSocket message too large, ignoring');
+          return;
+        }
+        const msg = JSON.parse(data.toString());
+        // Only act on known message types from clients.
+        // Currently clients are read-only consumers — no valid incoming types.
+        // This block is here to safely handle future client→server messages
+        // and to prevent unhandled data from causing errors.
+        if (msg && typeof msg.type === 'string') {
+          console.log('[L4] WebSocket message received, type:', msg.type);
+          // Future: handle 'subscribe', 'ping', etc. here
+        }
+      } catch {
+        // Silently drop malformed messages — don't crash or log sensitive content
+      }
+    });
+
+    ws.on('close', () => {
+      clients.delete(ws);
+      console.log('[L4] WebSocket client disconnected, total:', clients.size);
+    });
+
+    ws.on('error', (err) => {
+      console.error('[L4] WebSocket client error:', err.message);
+      clients.delete(ws);
+    });
   });
 
   function broadcastToClients(data) {

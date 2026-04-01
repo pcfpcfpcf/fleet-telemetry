@@ -12,8 +12,21 @@ const GEOFENCE_BOUNDS = {
 };
 const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 
+// ─── FIX 1: bounded in-memory maps ───────────────────────────────────────────
+// Original maps grew forever with unique device IDs (memory leak under load).
+// Capped at 10,000 entries each with oldest-first eviction — matches consumer.js.
+const MAX_TRACKED_DEVICES = 10_000;
+
 const idleTimers = new Map();
 const lastAlertAt = new Map();
+
+function boundedSet(map, key, value) {
+  if (!map.has(key) && map.size >= MAX_TRACKED_DEVICES) {
+    const oldestKey = map.keys().next().value;
+    map.delete(oldestKey);
+  }
+  map.set(key, value);
+}
 
 function shouldEmitAlert(deviceId, alertType, tsMs) {
   const key = `${deviceId}:${alertType}`;
@@ -21,7 +34,8 @@ function shouldEmitAlert(deviceId, alertType, tsMs) {
   if (tsMs - lastTs < ALERT_COOLDOWN_MS) {
     return false;
   }
-  lastAlertAt.set(key, tsMs);
+  // ─── FIX 1 applied: use bounded setter ───────────────────────────────────
+  boundedSet(lastAlertAt, key, tsMs);
   return true;
 }
 
@@ -59,7 +73,8 @@ export async function evaluateAlerts(event, broadcast) {
 
   if (ignition && speed === 0) {
     if (!idleTimers.has(device_id)) {
-      idleTimers.set(device_id, eventTsMs);
+      // ─── FIX 1 applied: use bounded setter ─────────────────────────────────
+      boundedSet(idleTimers, device_id, eventTsMs);
     } else {
       const idleSec = (eventTsMs - idleTimers.get(device_id)) / 1000;
       if (idleSec >= IGNITION_IDLE_SEC && shouldEmitAlert(device_id, 'ignition_idle', eventTsMs)) {
@@ -70,7 +85,8 @@ export async function evaluateAlerts(event, broadcast) {
         };
         await writeAlert(device_id, 'ignition_idle', alert, 'INFO');
         broadcast({ type: 'alert', alert_type: 'ignition_idle', ...alert });
-        idleTimers.set(device_id, eventTsMs);
+        // Reset idle timer after alert fires
+        boundedSet(idleTimers, device_id, eventTsMs);
       }
     }
   } else {

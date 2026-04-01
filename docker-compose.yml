@@ -10,8 +10,10 @@ services:
         condition: service_healthy
     environment:
       MQTT_HOST: emqx
-      MQTT_PORT: 1883
-      MQTT_PROTOCOL: mqtt
+      MQTT_PORT: 8883
+      MQTT_PROTOCOL: mqtts
+    volumes:
+      - ./certs:/certs:ro
     networks:
       - fleet-network
     restart: unless-stopped
@@ -32,6 +34,8 @@ services:
       EMQX_LOG__CONSOLE__LEVEL: "warning"
     volumes:
       - ./data/emqx:/opt/emqx/data
+      - ./certs:/opt/emqx/certs:ro
+      - ./config/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
     networks:
       - fleet-network
     healthcheck:
@@ -107,6 +111,8 @@ services:
       MQTT_PORT: 1883
       MQTT_PROTOCOL: mqtt
       NATS_URL: nats://nats:4222
+      NATS_USER: adapter
+      NATS_PASS: ${NATS_ADAPTER_PASSWORD}
     networks:
       - fleet-network
     healthcheck:
@@ -165,6 +171,8 @@ services:
       - "3001:3001"    # WebSocket
     environment:
       NATS_URL: nats://nats:4222
+      NATS_USER: l4service
+      NATS_PASS: ${NATS_L4_PASSWORD}
       DATABASE_URL: ${DATABASE_URL}
       PORT: 3000
       WS_PORT: 3001
