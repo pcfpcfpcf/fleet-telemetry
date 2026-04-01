@@ -142,7 +142,7 @@ services:
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fleet -d fleet || (echo 'Healthcheck failed:'; pg_isready -U fleet -d fleet; exit 1)"]
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER} -d ${TIMESCALE_DB}"]
       interval: 30s
       timeout: 20s
       retries: 15
@@ -228,7 +228,7 @@ services:
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U odoo -d odoo"]
+      test: ["CMD-SHELL", "pg_isready -U ${ODOO_USER} -d ${ODOO_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
