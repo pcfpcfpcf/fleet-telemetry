@@ -1,0 +1,80 @@
+name: Bootstrap Matrix
+
+on:
+  push:
+    branches:
+      - main
+      - testing
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  bootstrap-linux:
+    name: Linux Full Bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare env
+        run: cp .env.example .env
+
+      - name: Run Linux bootstrap
+        run: bash ./scripts/bootstrap-all.sh
+
+      - name: Wait for Odoo sync and verify telemetry rows
+        run: |
+          set -euo pipefail
+          for i in {1..18}; do
+            rows=$(docker exec fleet-odoo-db psql -U odoo -d odoo -t -A -c "SELECT COUNT(*) FROM fleet_vehicle_telemetry;")
+            if [ "${rows:-0}" -gt 0 ]; then
+              echo "Odoo telemetry rows: $rows"
+              exit 0
+            fi
+            echo "Waiting for telemetry sync... attempt $i"
+            sleep 10
+          done
+          echo "No telemetry rows found in Odoo after waiting."
+          docker logs fleet-odoo --tail 200 || true
+          exit 1
+
+      - name: Verify active devices in TimescaleDB
+        run: |
+          set -euo pipefail
+          active=$(docker exec fleet-timescaledb psql -U fleet -d fleet -t -A -c "SELECT COUNT(DISTINCT device_id) FROM telemetry WHERE timestamp >= NOW() - INTERVAL '10 minutes';")
+          echo "Active devices in last 10 minutes: $active"
+          test "${active:-0}" -ge 1
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+  bootstrap-windows:
+    name: Windows Bootstrap Script Path
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare minimal cert files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path certs | Out-Null
+          New-Item -ItemType File -Force -Path certs/ca.crt | Out-Null
+          New-Item -ItemType File -Force -Path certs/server.crt | Out-Null
+          New-Item -ItemType File -Force -Path certs/server.key | Out-Null
+          New-Item -ItemType File -Force -Path certs/simulator-client.crt | Out-Null
+          New-Item -ItemType File -Force -Path certs/simulator-client.key | Out-Null
+
+      - name: Validate PowerShell bootstrap script execution path
+        shell: pwsh
+        run: |
+          function global:docker {
+            param([Parameter(ValueFromRemainingArguments = $true)] [string[]]$Args)
+            Write-Host "MOCK docker $($Args -join ' ')"
+          }
+          ./scripts/bootstrap-all.ps1

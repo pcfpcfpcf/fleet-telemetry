@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import time
+import random
 from typing import Any
 import zlib
 
@@ -71,6 +72,7 @@ class BridgeState:
         self.origin_lat = 36.8065
         self.origin_lon = 10.1815
         self.world_scale = 0.00001
+        self._rng = random.Random(self.imei_base)
 
     def _imei_for_player(self, player_id: str) -> str:
         suffix = zlib.crc32(player_id.encode("utf-8")) % 100000
@@ -83,7 +85,8 @@ class BridgeState:
             return session
 
         imei = self._imei_for_player(player_id)
-        car = Car(latitude=lat, longitude=lon, speed=0.0, angle=0.0, ignition=True)
+        speed = 25.0 + (zlib.crc32(player_id.encode("utf-8")) % 35)
+        car = Car(latitude=lat, longitude=lon, speed=speed, angle=self._rng.uniform(0.0, 360.0), ignition=True)
         fmc = FMC003(imei=imei, car=car)
         client = TeltonikaTCPClient(host=self.target_host, port=self.target_port)
         session = DeviceSession(

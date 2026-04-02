@@ -66,10 +66,10 @@ git clone https://github.com/fedibenam/Fleet-Telemetry-Platform_test.git
 cd Fleet-Telemetry-Platform_test
 ```
 
-2. Run one command bootstrap
+2. Run one command startup
 
 ```powershell
-.\scripts\bootstrap-all.ps1
+docker compose up -d
 ```
 
 3. Open Odoo and log in
@@ -83,13 +83,13 @@ cd Fleet-Telemetry-Platform_test
 
 - `http://localhost:8069/web#action=87&model=fleet.vehicle.telemetry&view_type=list&cids=1&menu_id=70`
 
-What this script does:
+What this command does:
 
 - Starts L1-L4 services (simulator, EMQX, NATS, adapter, TimescaleDB, L4)
 - Starts Odoo + Odoo DB
 - Initializes Odoo base database (idempotent)
-- Installs/upgrades `fleet_telemetry_connector`
-- Restarts Odoo and prints final service status
+- Installs/upgrades fleet_telemetry_connector automatically via one-shot init container
+- Simulator vehicles cruise by default, so the Odoo list view shows live non-zero speeds on a fresh start
 
 ---
 
@@ -226,7 +226,7 @@ What it does:
 
 To use it:
 
-1. Start Odoo profile with `docker compose --profile with-odoo up -d odoo odoo-db`
+1. Start Odoo services with `docker compose up -d odoo odoo-db`
 2. Open Odoo on `http://localhost:8069`
 3. Install app `Fleet Telemetry Connector`
 4. Open Fleet Telemetry > Vehicles and run refresh

@@ -1,33 +1,49 @@
-param(
-  [string]$DbName = "odoo",
-  [string]$ModuleName = "fleet_telemetry_connector"
-)
-
 $ErrorActionPreference = "Stop"
 
 Write-Host "== Fleet Telemetry bootstrap (fresh clone) =="
 
-Write-Host "[1/6] Starting L1-L4 stack..."
-docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator
+$requiredCertFiles = @(
+	"certs/ca.crt",
+	"certs/server.crt",
+	"certs/server.key",
+	"certs/simulator-client.crt",
+	"certs/simulator-client.key"
+)
 
-Write-Host "[2/6] Starting Odoo profile..."
-docker compose --profile with-odoo up -d odoo odoo-db
+$missingCerts = $requiredCertFiles | Where-Object { -not (Test-Path $_) }
+if ($missingCerts.Count -gt 0) {
+	if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
+		throw "OpenSSL not found in PATH. Install OpenSSL or provide cert files under ./certs. Missing: $($missingCerts -join ', ')"
+	}
 
-Write-Host "[3/6] Initializing Odoo base DB (safe to re-run)..."
-docker compose run --rm odoo odoo -d $DbName -i base --without-demo=all --stop-after-init
+	Write-Host "[preflight] Missing TLS certs detected. Generating local dev certs..."
+	New-Item -ItemType Directory -Force -Path "certs" | Out-Null
 
-Write-Host "[4/6] Installing/upgrading Fleet Telemetry connector..."
-docker compose run --rm odoo odoo -d $DbName -u $ModuleName --stop-after-init
+	& openssl genrsa -out certs/ca.key 4096
+	& openssl req -new -x509 -days 3650 -key certs/ca.key -out certs/ca.crt -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=FleetCA"
 
-Write-Host "[5/6] Restarting Odoo..."
-docker compose restart odoo
+	& openssl genrsa -out certs/server.key 2048
+	& openssl req -new -key certs/server.key -out certs/server.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=emqx"
+	& openssl x509 -req -days 825 -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt
 
-Write-Host "[6/6] Current service status:"
+	& openssl genrsa -out certs/simulator-client.key 2048
+	& openssl req -new -key certs/simulator-client.key -out certs/simulator-client.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=simulator"
+	& openssl x509 -req -days 825 -in certs/simulator-client.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/simulator-client.crt
+
+	Write-Host "[preflight] Cert generation complete."
+}
+
+Write-Host "[1/3] Starting the full stack defined in docker-compose.yml..."
+docker compose up -d
+
+Write-Host "[2/3] Current service status:"
 docker compose ps
+
+Write-Host "[3/3] Fresh-clone entrypoints:"
+Write-Host "- Odoo URL: http://localhost:8069"
+Write-Host "- Database: odoo"
+Write-Host "- Login: admin / admin"
+Write-Host "- Fleet page: http://localhost:8069/web#action=87&model=fleet.vehicle.telemetry&view_type=list&cids=1&menu_id=70"
 
 Write-Host ""
 Write-Host "Bootstrap complete."
-Write-Host "Odoo URL: http://localhost:8069"
-Write-Host "Database: odoo"
-Write-Host "Login: admin / admin"
-Write-Host "Fleet page: http://localhost:8069/web#action=87&model=fleet.vehicle.telemetry&view_type=list&cids=1&menu_id=70"

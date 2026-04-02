@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import random
 import threading
 import time
 from typing import Any
@@ -321,6 +322,21 @@ def apply_controls(car: Car, controls: ControlState, dt_seconds: float) -> None:
         car.turn_right(degrees=70.0 * dt_seconds)
 
 
+def apply_autopilot(car: Car, rng: random.Random, dt_seconds: float, cruise_speed: float) -> None:
+    if not car.ignition:
+        return
+
+    if car.speed < cruise_speed - 4.0:
+        car.accelerate(amount=(6.0 + rng.uniform(0.0, 4.0)) * dt_seconds)
+    elif car.speed > cruise_speed + 8.0:
+        car.brake(amount=(5.0 + rng.uniform(0.0, 4.0)) * dt_seconds)
+
+    if rng.random() < 0.06:
+        car.turn_left(degrees=rng.uniform(1.5, 6.0) * dt_seconds)
+    elif rng.random() < 0.06:
+        car.turn_right(degrees=rng.uniform(1.5, 6.0) * dt_seconds)
+
+
 def main() -> int:
     args = parse_args()
 
@@ -396,7 +412,17 @@ def main() -> int:
 
     profile = load_profile(args.profile)
 
-    car = Car(latitude=args.latitude, longitude=args.longitude, speed=0.0, angle=0.0, ignition=True)
+    imei_digits = "".join(ch for ch in args.imei if ch.isdigit())
+    rng_seed = int(imei_digits[-8:] or "0")
+    rng = random.Random(rng_seed)
+    cruise_speed = 28.0 + (rng_seed % 40)
+    car = Car(
+        latitude=args.latitude,
+        longitude=args.longitude,
+        speed=cruise_speed,
+        angle=rng.uniform(0.0, 360.0),
+        ignition=True,
+    )
     device = FMC003(
         imei=args.imei,
         car=car,
@@ -434,6 +460,7 @@ def main() -> int:
             dt = max(0.01, loop_start - last_tick)
             last_tick = loop_start
 
+            apply_autopilot(car, rng, dt_seconds=dt, cruise_speed=cruise_speed)
             apply_controls(car, controls, dt_seconds=dt)
             car.update(dt_seconds=dt)
 

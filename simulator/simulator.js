@@ -21,6 +21,7 @@ const MQTT_HOST = process.env.MQTT_HOST || 'localhost';
 const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
 const MQTT_PROTOCOL = process.env.MQTT_PROTOCOL || 'mqtt';
 const SEND_INTERVAL = 30000; // 30 seconds
+const DEVICE_COUNT = Math.max(1, parseInt(process.env.SIMULATOR_DEVICE_COUNT || '50', 10) || 50);
 
 // ─── mTLS: load certs if using mqtts ─────────────────────────────────────────
 // Certs are mounted into the container at /certs by docker-compose.
@@ -42,8 +43,8 @@ if (MQTT_PROTOCOL === 'mqtts') {
   }
 }
 
-// Generate 50 simulated vehicles around Tunis
-const devices = Array.from({ length: 50 }, (_, i) => {
+// Generate simulated vehicles around Tunis
+const devices = Array.from({ length: DEVICE_COUNT }, (_, i) => {
   const idx = i + 1;
   const latBase = 36.8 + (Math.random() - 0.5) * 0.2;
   const lngBase = 10.15 + (Math.random() - 0.5) * 0.25;

@@ -1,32 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DB_NAME="${1:-odoo}"
-MODULE_NAME="${2:-fleet_telemetry_connector}"
-
 echo "== Fleet Telemetry bootstrap (fresh clone, Linux) =="
 
-echo "[1/6] Starting L1-L4 stack..."
-docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator
+required_files=(
+	certs/ca.crt
+	certs/server.crt
+	certs/server.key
+	certs/simulator-client.crt
+	certs/simulator-client.key
+)
 
-echo "[2/6] Starting Odoo profile..."
-docker compose --profile with-odoo up -d odoo odoo-db
+missing=0
+for f in "${required_files[@]}"; do
+	if [[ ! -f "$f" ]]; then
+		missing=1
+		break
+	fi
+done
 
-echo "[3/6] Initializing Odoo base DB (safe to re-run)..."
-docker compose run --rm odoo odoo -d "$DB_NAME" -i base --without-demo=all --stop-after-init
+if [[ "$missing" -eq 1 ]]; then
+	if ! command -v openssl >/dev/null 2>&1; then
+		echo "OpenSSL not found in PATH. Install OpenSSL or provide cert files under ./certs." >&2
+		exit 1
+	fi
 
-echo "[4/6] Installing/upgrading Fleet Telemetry connector..."
-docker compose run --rm odoo odoo -d "$DB_NAME" -u "$MODULE_NAME" --stop-after-init
+	echo "[preflight] Missing TLS certs detected. Generating local dev certs..."
+	mkdir -p certs
 
-echo "[5/6] Restarting Odoo..."
-docker compose restart odoo
+	openssl genrsa -out certs/ca.key 4096
+	openssl req -new -x509 -days 3650 -key certs/ca.key -out certs/ca.crt -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=FleetCA"
 
-echo "[6/6] Current service status:"
+	openssl genrsa -out certs/server.key 2048
+	openssl req -new -key certs/server.key -out certs/server.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=emqx"
+	openssl x509 -req -days 825 -in certs/server.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/server.crt
+
+	openssl genrsa -out certs/simulator-client.key 2048
+	openssl req -new -key certs/simulator-client.key -out certs/simulator-client.csr -subj "/C=TN/ST=Tunis/L=Tunis/O=FleetPlatform/CN=simulator"
+	openssl x509 -req -days 825 -in certs/simulator-client.csr -CA certs/ca.crt -CAkey certs/ca.key -CAcreateserial -out certs/simulator-client.crt
+
+	echo "[preflight] Cert generation complete."
+fi
+
+echo "[1/3] Starting the full stack defined in docker-compose.yml..."
+docker compose up -d
+
+echo "[2/3] Current service status:"
 docker compose ps
+
+echo "[3/3] Fresh-clone entrypoints:"
+echo "- Odoo URL: http://localhost:8069"
+echo "- Database: odoo"
+echo "- Login: admin / admin"
+echo "- Fleet page: http://localhost:8069/web#action=87&model=fleet.vehicle.telemetry&view_type=list&cids=1&menu_id=70"
 
 echo ""
 echo "Bootstrap complete."
-echo "Odoo URL: http://localhost:8069"
-echo "Database: odoo"
-echo "Login: admin / admin"
-echo "Fleet page: http://localhost:8069/web#action=87&model=fleet.vehicle.telemetry&view_type=list&cids=1&menu_id=70"

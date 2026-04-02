@@ -101,22 +101,52 @@ export async function startConsumer(broadcast) {
     console.log('[L4] TELEMETRY stream already exists');
   }
 
+  const durableName = 'l4-processor';
+  const consumerConfig = {
+    durable_name: durableName,
+    deliver_policy: 'all',
+    ack_policy: 'explicit',
+    filter_subject: 'telemetry.raw.*',
+    replay_policy: 'instant',
+  };
+
   try {
-    await jsm.consumers.add('TELEMETRY', {
-      durable_name: 'l4-processor',
-      deliver_policy: 'all',
-      ack_policy: 'explicit',
-      filter_subject: 'telemetry.raw.*',
-      replay_policy: 'instant',
-    });
-  } catch (_err) {
-    // Consumer likely already exists; this is safe to ignore.
+    await jsm.consumers.info('TELEMETRY', durableName);
+    console.log(`[L4] Reusing durable consumer ${durableName}`);
+  } catch (err) {
+    const description = err?.api_error?.description || err?.message || '';
+    if (err?.code === '404' || description === 'consumer not found') {
+      await jsm.consumers.add('TELEMETRY', consumerConfig);
+      console.log(`[L4] Created durable consumer ${durableName}`);
+    } else {
+      throw err;
+    }
   }
 
-  const consumer = await js.consumers.get('TELEMETRY', 'l4-processor');
-  const messages = await consumer.consume();
+  let messages;
+  let jetStreamMode = true;
 
-  console.log('[L4] NATS consumer started - processing telemetry.raw.*');
+  try {
+    let consumer = await js.consumers.get('TELEMETRY', durableName);
+    try {
+      messages = await consumer.consume();
+    } catch (err) {
+      const description = err?.api_error?.description || err?.message || '';
+      if (err?.code === '404' || description === 'consumer not found') {
+        await jsm.consumers.add('TELEMETRY', consumerConfig);
+        consumer = await js.consumers.get('TELEMETRY', durableName);
+        messages = await consumer.consume();
+      } else {
+        throw err;
+      }
+    }
+    console.log('[L4] JetStream consumer started - processing telemetry.raw.*');
+  } catch (err) {
+    jetStreamMode = false;
+    console.warn('[L4] JetStream consumer unavailable, falling back to core NATS subscription:', err?.message || err);
+    messages = nc.subscribe('telemetry.raw.*');
+    console.log('[L4] Core NATS subscription started - processing telemetry.raw.*');
+  }
 
   let processed = 0;
   for await (const msg of messages) {
@@ -125,7 +155,7 @@ export async function startConsumer(broadcast) {
       event = normalizeEvent(JSON.parse(sc.decode(msg.data)));
     } catch (parseErr) {
       console.error('[L4] consumer: malformed JSON, acking to skip:', parseErr.message);
-      msg.ack();
+      if (jetStreamMode && typeof msg.ack === 'function') msg.ack();
       continue;
     }
 
@@ -133,7 +163,7 @@ export async function startConsumer(broadcast) {
       // ─── FIX 1 applied: validate before any processing ───────────────────
       if (!isValidEvent(event)) {
         console.error('[L4] consumer: invalid event structure, skipping');
-        msg.ack(); // Ack to prevent redelivery of permanently bad messages
+        if (jetStreamMode && typeof msg.ack === 'function') msg.ack(); // Ack to prevent redelivery of permanently bad messages
         continue;
       }
 
@@ -155,7 +185,7 @@ export async function startConsumer(broadcast) {
       await evaluateAlerts(event, broadcast);
       broadcast({ type: 'telemetry', event });
 
-      msg.ack();
+      if (jetStreamMode && typeof msg.ack === 'function') msg.ack();
       processed++;
 
       if (processed % 100 === 0) {
@@ -165,10 +195,10 @@ export async function startConsumer(broadcast) {
       // DB constraint violations are permanent — ack to avoid infinite loop
       if (err.code === '23514' || err.code === '23505') {
         console.error(`[L4] consumer: DB constraint error (${err.code}), skipping: ${err.message}`);
-        msg.ack();
+        if (jetStreamMode && typeof msg.ack === 'function') msg.ack();
       } else {
         console.error('[L4] consumer error:', err.message);
-        msg.nak();
+        if (jetStreamMode && typeof msg.nak === 'function') msg.nak();
       }
     }
   }

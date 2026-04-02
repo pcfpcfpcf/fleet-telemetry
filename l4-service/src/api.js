@@ -7,6 +7,10 @@ import { pool, writeAuditLog } from './db.js';
 const API_KEY = process.env.API_KEY || '';
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:8069,http://localhost:3000')
   .split(',').map(o => o.trim()).filter(Boolean);
+const VEHICLE_ACTIVE_WINDOW_MINUTES = Math.max(
+  1,
+  parseInt(process.env.VEHICLE_ACTIVE_WINDOW_MINUTES || '15', 10) || 15
+);
 
 function isValidDeviceId(id) {
   return typeof id === 'string' && id.length > 0 && id.length <= 64 && /^[a-zA-Z0-9_\-]+$/.test(id);
@@ -84,7 +88,19 @@ export function startApi() {
 
   app.get('/vehicles', requireApiKey, async (_req, res) => {
     try {
-      const { rows } = await pool.query(`SELECT DISTINCT ON (device_id) device_id, lat, lng, speed, fuel_level, ignition, timestamp FROM telemetry ORDER BY device_id, timestamp DESC`);
+      const includeAll = String(_req.query?.all || '').toLowerCase() === 'true';
+      const sql = includeAll
+        ? `SELECT DISTINCT ON (device_id)
+             device_id, lat, lng, speed, fuel_level, ignition, timestamp
+           FROM telemetry
+           ORDER BY device_id, timestamp DESC`
+        : `SELECT DISTINCT ON (device_id)
+             device_id, lat, lng, speed, fuel_level, ignition, timestamp
+           FROM telemetry
+           WHERE timestamp >= NOW() - ($1::int * INTERVAL '1 minute')
+           ORDER BY device_id, timestamp DESC`;
+      const params = includeAll ? [] : [VEHICLE_ACTIVE_WINDOW_MINUTES];
+      const { rows } = await pool.query(sql, params);
       res.json(rows);
     } catch (e) {
       auditLog('db_error', { path: '/vehicles', error: e.message });
