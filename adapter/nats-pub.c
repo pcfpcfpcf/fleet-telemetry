@@ -108,8 +108,8 @@ void nats_pub_packet(const AVLPacket *pkt) {
         char event_id[64];
         gen_uuid(event_id, sizeof(event_id));
 
-        int64_t fuel = 0, ignition = 0, odometer = 0, rpm = 0, engine_load = 0;
-        int has_fuel = get_io_value(rec, 12, &fuel) || get_io_value(rec, 13, &fuel);
+        int64_t fuel_raw = 0, ignition = 0, odometer = 0, rpm = 0, engine_load = 0;
+        int has_fuel = get_io_value(rec, 13, &fuel_raw);
         int has_ignition = get_io_value(rec, 239, &ignition);
         int has_odometer = get_io_value(rec, 16, &odometer);
         int has_rpm = 0;
@@ -119,9 +119,10 @@ void nats_pub_packet(const AVLPacket *pkt) {
         int json_len = 1;
         for (int e = 0; e < rec->event_count; e++) {
             char io[128];
-            int n = snprintf(io, sizeof(io), "{\"id\":%d,\"name\":\"%s\",\"value\":%lld}%s", 
-                             rec->events[e].id, rec->events[e].name, (long long)rec->events[e].val,
-                             (e < rec->event_count - 1) ? "," : "");
+            const char *comma = (e > 0) ? "," : "";
+            int n = snprintf(io, sizeof(io), "%s{\"id\":%d,\"name\":\"%s\",\"value\":%lld}", 
+                             comma,
+                             rec->events[e].id, rec->events[e].name, (long long)rec->events[e].val);
             if (json_len + n < (int)sizeof(io_events_json)) {
                 strcat(io_events_json, io);
                 json_len += n;
@@ -130,7 +131,7 @@ void nats_pub_packet(const AVLPacket *pkt) {
         strcat(io_events_json, "]");
 
         char st_ignition[16] = "null"; if(has_ignition) snprintf(st_ignition, sizeof(st_ignition), ignition ? "true" : "false");
-        char st_fuel[32] = "null"; if(has_fuel) snprintf(st_fuel, sizeof(st_fuel), "%lld", (long long)fuel);
+        char st_fuel[32] = "null"; if(has_fuel) snprintf(st_fuel, sizeof(st_fuel), "%.1f", fuel_raw / 10.0);
         char st_odo[32]  = "null"; if(has_odometer) snprintf(st_odo, sizeof(st_odo), "%lld", (long long)odometer);
         char st_rpm[32]  = "null"; if(has_rpm) snprintf(st_rpm, sizeof(st_rpm), "%lld", (long long)rpm);
         char st_load[32] = "null"; if(has_engine_load) snprintf(st_load, sizeof(st_load), "%lld", (long long)engine_load);

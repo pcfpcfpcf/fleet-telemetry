@@ -10,16 +10,21 @@ export async function writeTelemetry(event) {
   const sql = `
     INSERT INTO telemetry (
       event_id, device_id, timestamp, received_at,
-      lat, lng, speed, fuel_level, odometer, ignition, buffered, payload
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      lat, lng, altitude, accuracy, bearing, speed,
+      ignition, fuel_level, odometer, rpm, engine_load,
+      buffered, payload
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
     ON CONFLICT (event_id, timestamp) DO NOTHING
   `;
   const vals = [
     event.event_id, event.device_id, event.timestamp,
     event.received_at || new Date().toISOString(),
     event.position?.lat ?? null, event.position?.lng ?? null,
-    event.position?.speed ?? null, event.telemetry?.fuel_level ?? null,
-    event.telemetry?.odometer ?? null, event.telemetry?.ignition ?? null,
+    event.position?.altitude ?? null, event.position?.accuracy ?? null,
+    event.position?.bearing ?? null, event.position?.speed ?? null,
+    event.telemetry?.ignition ?? null, event.telemetry?.fuel_level ?? null,
+    event.telemetry?.odometer ?? null, event.telemetry?.rpm ?? null,
+    event.telemetry?.engine_load ?? null,
     event.buffered ?? false, JSON.stringify(event),
   ];
   await pool.query(sql, vals);
