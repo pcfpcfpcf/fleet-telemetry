@@ -181,6 +181,7 @@ jobs:
           logs=$(docker logs fleet-adapter --tail 1200 2>&1 || true)
           sim_logs=$(docker logs fleet-simulator --tail 400 2>&1 || true)
           emqx_logs=$(docker logs fleet-emqx --tail 200 2>&1 || true)
+          devices=(352093114305801 352093114305802 352093114305803 352093114305804 352093114305805)
 
           echo "=== ADAPTER LOGS (tail) ==="
           echo "$logs" | tail -n 120
@@ -189,7 +190,7 @@ jobs:
           echo "=== EMQX LOGS (tail) ==="
           echo "$emqx_logs" | tail -n 80
 
-          for device in FMC003_SIM_001 FMC003_SIM_002 FMC003_SIM_003 FMC003_SIM_004 FMC003_SIM_005; do
+          for device in "${devices[@]}"; do
             if ! echo "$logs" | grep -q "$device"; then
               echo "Missing forwarded device in adapter logs: $device"
               exit 1
@@ -233,7 +234,7 @@ jobs:
 
             if [ "$code" = "200" ] && echo "$body" | grep -q '^\['; then
               echo "$body" | head -c 500
-              if echo "$body" | grep -q 'FMC003_SIM_00'; then
+              if echo "$body" | grep -q '35209311430580'; then
                 ok=true
                 break
               fi

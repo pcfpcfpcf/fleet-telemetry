@@ -80,11 +80,11 @@ function Wait-Healthy($services, $timeoutSec) {
 function Assert-AdapterEvidence {
     $logs = docker logs fleet-adapter --tail 500 2>&1 | Out-String
     $required = @(
-        "FMC003_SIM_001",
-        "FMC003_SIM_002",
-        "FMC003_SIM_003",
-        "FMC003_SIM_004",
-        "FMC003_SIM_005"
+        "352093114305801",
+        "352093114305802",
+        "352093114305803",
+        "352093114305804",
+        "352093114305805"
     )
 
     foreach ($device in $required) {
