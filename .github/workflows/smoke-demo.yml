@@ -525,7 +525,7 @@ jobs:
 
       - name: Start services for Odoo integration test
         run: |
-          docker compose --profile with-odoo up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db
+          docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator simulator-2 simulator-3 simulator-4 simulator-5 odoo-db odoo-init odoo-module-init odoo
 
       - name: Wait for Odoo DB to be healthy
         run: |
@@ -533,10 +533,10 @@ jobs:
           timeout_secs=120
           elapsed=0
           while [ "$elapsed" -lt "$timeout_secs" ]; do
-            cid=$(docker compose --profile with-odoo ps -q odoo-db)
+            cid=$(docker compose ps -q odoo-db)
             if [ -z "$cid" ]; then
               echo "odoo-db container not found"
-              docker compose --profile with-odoo ps
+              docker compose ps
               exit 1
             fi
             status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
@@ -546,33 +546,54 @@ jobs:
             fi
             echo "Waiting for odoo-db to be healthy... (status: $status)"
             docker inspect "$cid" || true
-            docker compose --profile with-odoo logs --tail 20 odoo-db || true
+            docker compose logs --tail 20 odoo-db || true
             sleep 5
             elapsed=$((elapsed + 5))
           done
           echo "odoo-db did not become healthy in time"
           docker inspect "$cid" || true
-          docker compose --profile with-odoo logs --tail 100 odoo-db
+          docker compose logs --tail 100 odoo-db
           exit 1
 
-      - name: Initialize Odoo database and install connector
+      - name: Wait for Odoo init jobs to complete successfully
         run: |
           set -euo pipefail
-          docker compose --profile with-odoo run --rm odoo odoo -d odoo -i base --without-demo=all --stop-after-init
-          docker compose --profile with-odoo run --rm odoo odoo -d odoo -i fleet_telemetry_connector --stop-after-init
-          echo "Listing installed Odoo modules after install:"
-          docker compose --profile with-odoo run --rm odoo odoo -d odoo -c "import odoo; odoo.tools.config['addons_path'] = '/mnt/extra-addons'; from odoo.modules.registry import Registry; r = Registry('odoo'); print([m for m in r._init_modules])" || true
-          echo "Listing all tables in odoo database after install:"
-          docker compose --profile with-odoo run --rm odoo psql -h odoo-db -U odoo -d odoo -c "\\dt" || true
+          timeout_secs=300
+          elapsed=0
+          while [ "$elapsed" -lt "$timeout_secs" ]; do
+            init_cid=$(docker compose ps -q odoo-init)
+            module_cid=$(docker compose ps -q odoo-module-init)
 
-      - name: Start Odoo service
-        run: |
-          docker compose --profile with-odoo up -d odoo
+            if [ -n "$init_cid" ] && [ -n "$module_cid" ]; then
+              init_status=$(docker inspect --format='{{.State.Status}}' "$init_cid")
+              module_status=$(docker inspect --format='{{.State.Status}}' "$module_cid")
+
+              if [ "$init_status" = "exited" ] && [ "$module_status" = "exited" ]; then
+                init_code=$(docker inspect --format='{{.State.ExitCode}}' "$init_cid")
+                module_code=$(docker inspect --format='{{.State.ExitCode}}' "$module_cid")
+                if [ "$init_code" = "0" ] && [ "$module_code" = "0" ]; then
+                  echo "odoo-init and odoo-module-init completed successfully"
+                  exit 0
+                fi
+                echo "Odoo init containers exited with non-zero code (init=$init_code, module=$module_code)"
+                docker compose logs --tail 200 odoo-init odoo-module-init odoo-db || true
+                exit 1
+              fi
+            fi
+
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "Timed out waiting for odoo-init and odoo-module-init to complete"
+          docker compose ps
+          docker compose logs --tail 200 odoo-init odoo-module-init odoo-db || true
+          exit 1
 
       - name: Wait for core and Odoo DB services to be healthy
         run: |
           set -euo pipefail
-          services=(emqx traccar nats timescaledb adapter l4-service odoo-db)
+          services=(emqx traccar nats timescaledb adapter l4-service odoo-db odoo)
           timeout_secs=420
           elapsed=0
 
@@ -602,22 +623,8 @@ jobs:
 
           echo "Services failed to reach healthy state in time"
           docker compose ps
-          docker compose logs --tail 120 emqx nats timescaledb adapter l4-service odoo-db || true
+          docker compose logs --tail 120 emqx nats timescaledb adapter l4-service odoo-db odoo || true
           exit 1
-
-      - name: Initialize Odoo database and install connector
-        run: |
-          set -euo pipefail
-          docker compose --profile with-odoo run --rm odoo odoo -d odoo -i base --without-demo=all --stop-after-init
-          docker compose --profile with-odoo run --rm odoo odoo -d odoo -u fleet_telemetry_connector --stop-after-init
-          echo "Listing installed Odoo modules after install:"
-          docker compose --profile with-odoo run --rm odoo odoo -d odoo -c "import odoo; odoo.tools.config['addons_path'] = '/mnt/extra-addons'; from odoo.modules.registry import Registry; r = Registry('odoo'); print([m for m in r._init_modules])" || true
-          echo "Listing all tables in odoo database after install:"
-          docker compose --profile with-odoo run --rm odoo psql -h odoo-db -U odoo -d odoo -c "\\dt" || true
-
-      - name: Restart Odoo web service
-        run: |
-          docker compose --profile with-odoo restart odoo
 
       - name: Wait for Odoo to be healthy
         run: |
@@ -625,7 +632,7 @@ jobs:
           timeout_secs=240
           elapsed=0
           while [ "$elapsed" -lt "$timeout_secs" ]; do
-            cid=$(docker compose --profile with-odoo ps -q odoo)
+            cid=$(docker compose ps -q odoo)
             if [ -z "$cid" ]; then
               echo "Odoo container not found. Debugging context:"
               echo "Current directory: $(pwd)"
@@ -651,63 +658,6 @@ jobs:
           echo "Odoo did not become healthy"
           docker inspect "$cid" || true
           docker compose logs --tail 200 odoo
-          exit 1
-          elapsed=0
-
-          while [ "$elapsed" -lt "$timeout_secs" ]; do
-            cid=$(docker compose --profile with-odoo ps -q odoo)
-            if [ -n "$cid" ]; then
-              status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
-              if [ "$status" = "healthy" ]; then
-                echo "Odoo is healthy"
-                exit 0
-              fi
-            fi
-            sleep 5
-            elapsed=$((elapsed + 5))
-          done
-
-          echo "Odoo did not become healthy"
-          docker compose logs --tail 200 odoo || true
-          exit 1
-
-
-      - name: Debug timescaledb before table wait
-        run: |
-          echo "Checking timescaledb container status..."
-          docker compose ps
-          docker compose logs --tail 50 timescaledb || true
-
-
-      - name: Debug odoo-db before table wait
-        run: |
-          echo "Checking odoo-db container status..."
-          docker compose ps
-          docker compose logs --tail 100 odoo-db || true
-          echo "Listing tables in odoo-db via fleet-odoo-db container:"
-          docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
-
-
-      - name: Wait for fleet_vehicle_telemetry table
-        run: |
-          echo "Waiting for fleet_vehicle_telemetry table (from fleet-odoo-db container)..."
-          for i in {1..60}; do
-            if docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" | grep -q fleet_vehicle_telemetry; then
-              echo "Table exists."
-              exit 0
-            fi
-            echo "Table not ready yet... retrying ($i/60)"
-            docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
-            sleep 5
-          done
-
-          echo "Table did not appear in time"
-          echo "Current tables in database (from fleet-odoo-db container):"
-          docker exec fleet-odoo-db env PGPASSWORD=odoo psql -U odoo -d odoo -c "\dt" || true
-          echo "Odoo logs:"
-          docker compose logs --tail 200 odoo
-          echo "Odoo-db logs:"
-          docker compose logs --tail 100 odoo-db
           exit 1
 
       - name: Verify Odoo telemetry data is synced
@@ -744,7 +694,7 @@ jobs:
         if: always()
         run: |
           set +e
-          docker compose --profile with-odoo down -v --remove-orphans
+          docker compose down -v --remove-orphans
           docker rm -f fleet-simulator >/dev/null 2>&1 || true
           docker network rm fleet-network >/dev/null 2>&1 || true
           true
