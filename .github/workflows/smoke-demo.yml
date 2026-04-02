@@ -202,12 +202,20 @@ jobs:
           echo "=== EMQX LOGS (tail) ==="
           echo "$emqx_logs" | tail -n 80
 
-          for device in "${devices[@]}"; do
-            if ! echo "$logs" | grep -q "$device"; then
-              echo "Missing forwarded device in adapter logs: $device"
-              exit 1
+          active_devices=0
+          for i in $(seq 1 20); do
+            active_devices=$(docker exec fleet-timescaledb psql -U fleet -d fleet -t -A -c "SELECT COUNT(DISTINCT device_id) FROM telemetry WHERE timestamp >= NOW() - INTERVAL '10 minutes';" | tr -d '[:space:]' || echo 0)
+            if [ "${active_devices:-0}" -ge 5 ]; then
+              break
             fi
+            sleep 3
           done
+
+          if [ "${active_devices:-0}" -lt 5 ]; then
+            echo "Expected five active device IDs in TimescaleDB, found: $active_devices"
+            docker exec fleet-timescaledb psql -U fleet -d fleet -c "SELECT device_id, speed, timestamp FROM telemetry ORDER BY timestamp DESC LIMIT 20;" || true
+            exit 1
+          fi
 
           if ! echo "$logs" | grep -q "NATS"; then
             echo "Adapter logs did not include NATS forwarding evidence"
