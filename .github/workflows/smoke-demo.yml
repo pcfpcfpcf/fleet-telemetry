@@ -105,7 +105,7 @@ jobs:
 
       - name: Start remaining telemetry stack (L1-L4)
         run: |
-          docker compose up -d emqx traccar nats adapter l4-service simulator
+          docker compose up -d emqx traccar nats adapter l4-service simulator simulator-2 simulator-3 simulator-4 simulator-5
 
       - name: Wait for timescaledb to be healthy
         run: |
@@ -180,6 +180,10 @@ jobs:
           set -euo pipefail
           logs=$(docker logs fleet-adapter --tail 1200 2>&1 || true)
           sim_logs=$(docker logs fleet-simulator --tail 400 2>&1 || true)
+          sim2_logs=$(docker logs fleet-simulator-2 --tail 400 2>&1 || true)
+          sim3_logs=$(docker logs fleet-simulator-3 --tail 400 2>&1 || true)
+          sim4_logs=$(docker logs fleet-simulator-4 --tail 400 2>&1 || true)
+          sim5_logs=$(docker logs fleet-simulator-5 --tail 400 2>&1 || true)
           emqx_logs=$(docker logs fleet-emqx --tail 200 2>&1 || true)
           devices=(352093114305801 352093114305802 352093114305803 352093114305804 352093114305805)
 
@@ -187,6 +191,14 @@ jobs:
           echo "$logs" | tail -n 120
           echo "=== SIMULATOR LOGS (tail) ==="
           echo "$sim_logs" | tail -n 80
+          echo "=== SIMULATOR-2 LOGS (tail) ==="
+          echo "$sim2_logs" | tail -n 40
+          echo "=== SIMULATOR-3 LOGS (tail) ==="
+          echo "$sim3_logs" | tail -n 40
+          echo "=== SIMULATOR-4 LOGS (tail) ==="
+          echo "$sim4_logs" | tail -n 40
+          echo "=== SIMULATOR-5 LOGS (tail) ==="
+          echo "$sim5_logs" | tail -n 40
           echo "=== EMQX LOGS (tail) ==="
           echo "$emqx_logs" | tail -n 80
 
