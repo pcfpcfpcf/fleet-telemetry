@@ -561,8 +561,9 @@ jobs:
           timeout_secs=300
           elapsed=0
           while [ "$elapsed" -lt "$timeout_secs" ]; do
-            init_cid=$(docker compose ps -q odoo-init)
-            module_cid=$(docker compose ps -q odoo-module-init)
+            # Use -a so one-shot exited containers are still discoverable.
+            init_cid=$(docker compose ps -aq odoo-init)
+            module_cid=$(docker compose ps -aq odoo-module-init)
 
             if [ -n "$init_cid" ] && [ -n "$module_cid" ]; then
               init_status=$(docker inspect --format='{{.State.Status}}' "$init_cid")
@@ -580,6 +581,8 @@ jobs:
                 exit 1
               fi
             fi
+
+            echo "Waiting for init jobs... elapsed=${elapsed}s init_cid=${init_cid:-none} module_cid=${module_cid:-none}"
 
             sleep 5
             elapsed=$((elapsed + 5))
