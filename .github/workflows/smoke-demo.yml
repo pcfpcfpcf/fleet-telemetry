@@ -38,7 +38,7 @@ jobs:
       - name: Prepare writable bind-mount directories
         run: |
           set -euo pipefail
-          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db certs
+          mkdir -p data/emqx data/nats data/timescaledb data/odoo data/odoo-db certs
           chmod -R 777 data
           ls -ld data data/*
 
@@ -105,7 +105,7 @@ jobs:
 
       - name: Start remaining telemetry stack (L1-L4)
         run: |
-          docker compose up -d emqx traccar nats adapter l4-service simulator
+          docker compose up -d emqx nats adapter l4-service simulator
 
       - name: Wait for timescaledb to be healthy
         run: |
@@ -138,7 +138,7 @@ jobs:
       - name: Wait for services to be healthy
         run: |
           set -euo pipefail
-          services=(emqx traccar nats timescaledb adapter l4-service)
+          services=(emqx nats timescaledb adapter l4-service)
           timeout_secs=540
           elapsed=0
 
@@ -288,7 +288,7 @@ jobs:
         if: always()
         run: |
           docker compose ps
-          docker compose logs --tail 120 emqx traccar nats adapter timescaledb l4-service simulator || true
+          docker compose logs --tail 120 emqx nats adapter timescaledb l4-service simulator || true
 
       - name: Teardown
         if: always()
@@ -489,7 +489,7 @@ jobs:
       - name: Prepare writable bind-mount directories
         run: |
           set -euo pipefail
-          mkdir -p data/emqx data/nats data/timescaledb data/traccar data/odoo data/odoo-db certs
+          mkdir -p data/emqx data/nats data/timescaledb data/odoo data/odoo-db certs
           chmod -R 777 data
           ls -ld data data/*
 
@@ -513,7 +513,7 @@ jobs:
 
       - name: Start services for Odoo integration test
         run: |
-          docker compose up -d emqx traccar nats timescaledb adapter l4-service simulator odoo-db odoo-init odoo-module-init odoo
+          docker compose up -d emqx nats timescaledb adapter l4-service simulator odoo-db odoo-init odoo-module-init odoo
 
       - name: Wait for Odoo DB to be healthy
         run: |
@@ -584,7 +584,7 @@ jobs:
       - name: Wait for core and Odoo DB services to be healthy
         run: |
           set -euo pipefail
-          services=(emqx traccar nats timescaledb adapter l4-service odoo-db odoo)
+          services=(emqx nats timescaledb adapter l4-service odoo-db odoo)
           timeout_secs=420
           elapsed=0
 
@@ -679,7 +679,7 @@ jobs:
         if: always()
         run: |
           docker compose ps
-          docker compose logs --tail 120 emqx traccar nats adapter timescaledb l4-service odoo odoo-db simulator || true
+          docker compose logs --tail 120 emqx nats adapter timescaledb l4-service odoo odoo-db simulator || true
 
       - name: Teardown
         if: always()

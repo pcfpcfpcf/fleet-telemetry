@@ -44,29 +44,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # L3 Ingestion: Traccar (Protocol Decoder only)
-  traccar:
-    image: traccar/traccar:latest
-    container_name: fleet-traccar
-    depends_on:
-      emqx:
-        condition: service_healthy
-    ports:
-      - "5055:5055"    # Teltonika protocol input
-      - "8082:8082"    # Web UI + webhook output
-    volumes:
-      - ./data/traccar:/opt/traccar/data
-      - ./config/traccar/traccar.xml:/opt/traccar/conf/traccar.xml:ro
-    networks:
-      - fleet-network
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-
   # L3 Message Queue: NATS JetStream
   nats:
     image: nats:2.10-alpine
@@ -194,17 +171,7 @@ services:
     image: odoo:17
     user: root
     container_name: fleet-odoo-init
-    command: >
-      bash -c "
-        if [ ! -f /var/lib/odoo/.initialized ]; then
-          echo 'Initializing Odoo database...' &&
-          odoo -d odoo --init=base --stop-after-init &&
-          touch /var/lib/odoo/.initialized &&
-          echo 'Init complete.'
-        else
-          echo 'Already initialized, skipping.'
-        fi
-      "
+    command: ["/bin/bash", "/scripts/odoo-init.sh"]
     depends_on:
       odoo-db:
         condition: service_healthy
@@ -219,6 +186,7 @@ services:
       - ./data/odoo:/var/lib/odoo
       - ./odoo/addons:/mnt/extra-addons
       - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+      - ./scripts:/scripts:ro
     networks:
       - fleet-network
     restart: "no"
@@ -269,12 +237,7 @@ services:
         condition: service_completed_successfully
       odoo-db:
         condition: service_healthy
-    command: >
-      odoo -d ${ODOO_DB:-odoo}
-      -i fleet_telemetry_connector
-      -u fleet_telemetry_connector
-      --without-demo=all
-      --stop-after-init
+    command: ["/bin/bash", "/scripts/odoo-module-init.sh"]
     environment:
       HOST: odoo-db
       PORT: 5432
@@ -287,6 +250,7 @@ services:
       - ./data/odoo:/var/lib/odoo
       - ./odoo/addons:/mnt/extra-addons
       - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+      - ./scripts:/scripts:ro
     networks:
       - fleet-network
     restart: "no"

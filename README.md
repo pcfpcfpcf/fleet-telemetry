@@ -129,10 +129,6 @@ What this command does:
 
 ── optional paths ────────────────
 ┌─────────────────────────┐
-│        Traccar          │  Teltonika binary decoder
-└─────────────────────────┘
-
-┌─────────────────────────┐
 │        Odoo 17          │  Fleet manager dashboard + L5 connector module
 └────────────┬────────────┘
              │ PostgreSQL
@@ -189,6 +185,7 @@ Key reliability fixes applied:
 - TimescaleDB schema fixed for hypertable constraints
 - CI bind-mount permissions hardened (`data/*` prepared and chmod in workflow)
 - CI teardown hardened to include simulator profile and tolerate cleanup leftovers
+- Traccar removed from the default runtime path because it was not used by the validated EMQX → adapter → NATS → L4 → TimescaleDB → Odoo flow
 
 ---
 
@@ -339,7 +336,7 @@ python simulator/main.py --host 127.0.0.1 --port 5055 --imei 352093114305816 --r
 
 ### MTA bridge (LAN)
 
-1. Start target receiver (Traccar on 5055 or local demo server).
+1. Start the target receiver if you are testing the optional TCP bridge, or use the local demo server.
 2. Start bridge:
 
 ```powershell
