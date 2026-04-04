@@ -33,8 +33,8 @@ if ($missingCerts.Count -gt 0) {
 	Write-Host "[preflight] Cert generation complete."
 }
 
-Write-Host "[1/3] Starting the full stack defined in docker-compose.yml..."
-docker compose up -d
+Write-Host "[1/3] Starting the full stack defined in docker-compose.yml (with rebuild)..."
+docker compose up -d --build
 
 Write-Host "[2/3] Current service status:"
 docker compose ps

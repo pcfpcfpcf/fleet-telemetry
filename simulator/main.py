@@ -157,12 +157,12 @@ class MqttMirror:
                 "Start EMQX first (e.g. docker compose --env-file .env.example up -d emqx)."
             ) from exc
 
-    def publish_raw(self, packet: bytes) -> None:
-        topic = self.args.mqtt_raw_topic.format(imei=self.args.imei)
+    def publish_raw(self, packet: bytes, imei: str | None = None) -> None:
+        topic = self.args.mqtt_raw_topic.format(imei=imei or self.args.imei)
         info = self.client.publish(topic, packet, qos=self.args.mqtt_qos, retain=False)
         info.wait_for_publish(timeout=2.0)
 
-    def publish_compat_event(self, record: dict[str, Any], buffered: bool) -> None:
+    def publish_compat_event(self, record: dict[str, Any], buffered: bool, imei: str | None = None) -> None:
         if not self.args.mqtt_compat_topic:
             return
 
@@ -170,7 +170,7 @@ class MqttMirror:
         timestamp = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat().replace("+00:00", "Z")
         event = {
             "event_id": str(uuid4()),
-            "device_id": self.args.imei,
+            "device_id": imei or self.args.imei,
             "timestamp": timestamp,
             "received_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "position": {
@@ -191,7 +191,7 @@ class MqttMirror:
             "io_events": [],
             "buffered": buffered,
         }
-        topic = self.args.mqtt_compat_topic.format(imei=self.args.imei)
+        topic = self.args.mqtt_compat_topic.format(imei=imei or self.args.imei)
         payload = json.dumps(event, separators=(",", ":"))
         info = self.client.publish(topic, payload, qos=self.args.mqtt_qos, retain=False)
         info.wait_for_publish(timeout=2.0)
@@ -271,6 +271,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--imei", default="352093114305816", help="15-digit device IMEI")
     parser.add_argument("--latitude", type=float, default=36.8065, help="Initial latitude")
     parser.add_argument("--longitude", type=float, default=10.1815, help="Initial longitude")
+    parser.add_argument("--fleet-count", type=int, default=1, help="Number of virtual vehicles emitted by one process")
+    parser.add_argument("--fleet-lat-step", type=float, default=0.005, help="Latitude offset per virtual vehicle")
+    parser.add_argument("--fleet-lon-step", type=float, default=0.005, help="Longitude offset per virtual vehicle")
     parser.add_argument("--no-gps-noise", action="store_true", help="Disable GPS noise")
     parser.add_argument("--debug", action="store_true", help="Print periodic telemetry debug logs")
     parser.add_argument("--no-ui", action="store_true", help="Disable dashboard and print debug lines only")
@@ -342,6 +345,8 @@ def main() -> int:
 
     if len(args.imei) != 15 or not args.imei.isdigit():
         raise ValueError("IMEI must be a 15-digit numeric string")
+    if args.fleet_count <= 0:
+        raise ValueError("fleet-count must be > 0")
     if args.physics_step <= 0:
         raise ValueError("physics-step must be > 0")
     if args.burst_size <= 0:
@@ -405,6 +410,124 @@ def main() -> int:
             print("\n[sim] Stopping replay")
         finally:
             client.close()
+            if mqtt_mirror is not None:
+                mqtt_mirror.close()
+
+        return 0
+
+    if args.fleet_count > 1:
+        if not args.no_tcp:
+            raise ValueError("fleet-count > 1 requires --no-tcp (multi-device TCP mode is not supported)")
+        if not args.no_ui:
+            raise ValueError("fleet-count > 1 requires --no-ui")
+
+        profile = load_profile(args.profile)
+        base_imei = int(args.imei)
+        fleet_nodes: list[dict[str, Any]] = []
+        loop_start = time.time()
+
+        for idx in range(args.fleet_count):
+            imei = f"{base_imei + idx:015d}"
+            lat = args.latitude + (idx * args.fleet_lat_step)
+            lon = args.longitude + (idx * args.fleet_lon_step)
+
+            imei_digits = "".join(ch for ch in imei if ch.isdigit())
+            rng_seed = int(imei_digits[-8:] or "0")
+            rng = random.Random(rng_seed)
+            cruise_speed = 28.0 + (rng_seed % 40)
+
+            car = Car(
+                latitude=lat,
+                longitude=lon,
+                speed=cruise_speed,
+                angle=rng.uniform(0.0, 360.0),
+                ignition=True,
+            )
+            device = FMC003(
+                imei=imei,
+                car=car,
+                moving_interval_s=args.moving_interval,
+                idle_interval_s=args.idle_interval,
+                ignition_off_interval_s=args.ignition_off_interval,
+                profile=profile,
+            )
+            fleet_nodes.append(
+                {
+                    "imei": imei,
+                    "rng": rng,
+                    "cruise_speed": cruise_speed,
+                    "car": car,
+                    "device": device,
+                    "pending_records": [],
+                    "last_record": None,
+                    "last_record_at": loop_start,
+                    "next_send_at": loop_start,
+                }
+            )
+
+        first_imei = fleet_nodes[0]["imei"]
+        last_imei = fleet_nodes[-1]["imei"]
+        print(
+            f"[sim] Fleet mode active: {args.fleet_count} virtual vehicles "
+            f"({first_imei}..{last_imei}) -> {args.mqtt_host}:{args.mqtt_port}"
+        )
+
+        controls = ControlState()
+        last_debug_print = 0.0
+        try:
+            while True:
+                tick_start = time.time()
+                dt = max(0.01, tick_start - loop_start)
+                loop_start = tick_start
+
+                for node in fleet_nodes:
+                    car = node["car"]
+                    apply_autopilot(car, node["rng"], dt_seconds=dt, cruise_speed=node["cruise_speed"])
+                    apply_controls(car, controls, dt_seconds=dt)
+                    car.update(dt_seconds=dt)
+
+                    if tick_start >= node["next_send_at"]:
+                        rec_dt = max(0.01, tick_start - node["last_record_at"])
+                        record = node["device"].build_record(
+                            add_gps_noise=not args.no_gps_noise,
+                            dt_seconds=rec_dt,
+                        )
+                        node["last_record"] = record
+                        node["last_record_at"] = tick_start
+                        pending_records = node["pending_records"]
+                        pending_records.append(record)
+                        if len(pending_records) > args.max_buffer:
+                            del pending_records[:-args.max_buffer]
+                        node["next_send_at"] = tick_start + node["device"].tx_interval()
+
+                    pending_records = node["pending_records"]
+                    if pending_records and mqtt_mirror is not None:
+                        send_count = min(args.burst_size, len(pending_records))
+                        to_send = pending_records[:send_count]
+                        packet = build_codec8_packet(to_send)
+                        mqtt_mirror.publish_raw(packet, imei=node["imei"])
+                        if node["last_record"] is not None:
+                            mqtt_mirror.publish_compat_event(
+                                node["last_record"],
+                                buffered=len(pending_records) > send_count,
+                                imei=node["imei"],
+                            )
+                        del pending_records[:send_count]
+
+                if args.debug and (tick_start - last_debug_print) >= 5.0:
+                    snapshot = " ".join(
+                        f"{node['imei'][-3:]}:{node['car'].speed:05.1f}"
+                        for node in fleet_nodes
+                    )
+                    print(f"[sim] fleet-speed-kmh {snapshot}")
+                    last_debug_print = tick_start
+
+                sleep_for = args.physics_step - (time.time() - tick_start)
+                if sleep_for > 0:
+                    time.sleep(sleep_for)
+        except KeyboardInterrupt:
+            print("\n[sim] Stopping fleet simulator")
+        finally:
             if mqtt_mirror is not None:
                 mqtt_mirror.close()
 

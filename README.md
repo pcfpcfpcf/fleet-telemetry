@@ -9,7 +9,8 @@
 ## How the Platform Works (End-to-End)
 
 **1. Simulator**
-    - Simulates 5 GPS devices, each sending normalized telemetry (position, speed, fuel, etc.) every 30 seconds.
+    - Runs as one simulator service that emits telemetry for 5 virtual GPS devices.
+    - Each virtual device sends normalized telemetry (position, speed, fuel, etc.) every 30 seconds.
     - Publishes data via MQTT to the EMQX broker.
 
 **2. EMQX Broker**
@@ -98,7 +99,7 @@ What this command does:
 
 ```
 ┌─────────────────────────┐
-│   GPS Device Simulator  │  5 fake FMC003 devices — Tunis area
+│   GPS Device Simulator  │  1 process, 5 fake FMC003 devices — Tunis area
 └────────────┬────────────┘
              │ MQTT (plain, local only)
              ▼

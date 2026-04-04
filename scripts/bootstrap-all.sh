@@ -42,8 +42,8 @@ if [[ "$missing" -eq 1 ]]; then
 	echo "[preflight] Cert generation complete."
 fi
 
-echo "[1/3] Starting the full stack defined in docker-compose.yml..."
-docker compose up -d
+echo "[1/3] Starting the full stack defined in docker-compose.yml (with rebuild)..."
+docker compose up -d --build
 
 echo "[2/3] Current service status:"
 docker compose ps

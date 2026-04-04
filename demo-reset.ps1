@@ -10,6 +10,6 @@ if (Test-Path ".\data\timescaledb") {
 }
 
 Write-Host "Restarting core services..." -ForegroundColor Cyan
-docker compose up -d emqx nats timescaledb adapter | Out-Host
+docker compose up -d --build emqx nats timescaledb adapter | Out-Host
 
 Write-Host "Reset complete." -ForegroundColor Green
