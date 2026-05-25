@@ -1,6 +1,7 @@
 services:
-  # L1 Device Simulator (starts by default)
+  # L1 Device Simulators — opt-in only, not needed with a real FMC003
   simulator:
+    profiles: [simulate]
     build:
       context: ./simulator
       dockerfile: Dockerfile
@@ -20,6 +21,7 @@ services:
     restart: unless-stopped
 
   simulator-2:
+    profiles: [simulate]
     build:
       context: ./simulator
       dockerfile: Dockerfile
@@ -35,6 +37,7 @@ services:
     restart: unless-stopped
 
   simulator-3:
+    profiles: [simulate]
     build:
       context: ./simulator
       dockerfile: Dockerfile
@@ -50,6 +53,7 @@ services:
     restart: unless-stopped
 
   simulator-4:
+    profiles: [simulate]
     build:
       context: ./simulator
       dockerfile: Dockerfile
@@ -65,6 +69,7 @@ services:
     restart: unless-stopped
 
   simulator-5:
+    profiles: [simulate]
     build:
       context: ./simulator
       dockerfile: Dockerfile
@@ -89,6 +94,8 @@ services:
       - "8883:8883"    # MQTT over TLS (production)
       - "18083:18083"  # Admin dashboard
     environment:
+      EMQX_NODE__NAME: "emqx@127.0.0.1"
+      EMQX_CLUSTER__DISCOVERY_STRATEGY: "manual"
       EMQX_AUTHORIZATION__NO_MATCH: "allow"
       EMQX_LOG_CONSOLE_LEVEL: "warning"
     volumes:
@@ -104,16 +111,17 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # L3 Ingestion: Traccar (Protocol Decoder only)
+  # Traccar: not used with the C adapter — kept for reference, opt-in only
   traccar:
+    profiles: [traccar]
     image: traccar/traccar:latest
     container_name: fleet-traccar
     depends_on:
       emqx:
         condition: service_healthy
     ports:
-      - "5055:5055"    # Teltonika protocol input
-      - "8082:8082"    # Web UI + webhook output
+      - "5055:5055"
+      - "8082:8082"
     volumes:
       - ./data/traccar:/opt/traccar/data
       - ./config/traccar/traccar.xml:/opt/traccar/conf/traccar.xml:ro
