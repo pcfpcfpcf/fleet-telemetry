@@ -7,15 +7,9 @@ services:
       dockerfile: Dockerfile
     container_name: fleet-simulator
     depends_on:
-      emqx:
+      adapter:
         condition: service_healthy
-    environment:
-      MQTT_HOST: emqx
-      MQTT_PORT: 1883
-      MQTT_PROTOCOL: mqtt
-    volumes:
-      - ./certs:/certs:ro
-    command: ["--no-ui", "--debug", "--no-tcp", "--mqtt-host", "emqx", "--mqtt-port", "1883", "--imei", "352093114305801", "--latitude", "36.8065", "--longitude", "10.1815"]
+    command: ["--no-ui", "--debug", "--host", "adapter", "--port", "18883", "--imei", "352093114305801", "--latitude", "36.8065", "--longitude", "10.1815"]
     networks:
       - fleet-network
     restart: unless-stopped
@@ -27,11 +21,9 @@ services:
       dockerfile: Dockerfile
     container_name: fleet-simulator-2
     depends_on:
-      emqx:
+      adapter:
         condition: service_healthy
-    volumes:
-      - ./certs:/certs:ro
-    command: ["--no-ui", "--debug", "--no-tcp", "--mqtt-host", "emqx", "--mqtt-port", "1883", "--imei", "352093114305802", "--latitude", "36.8115", "--longitude", "10.1865"]
+    command: ["--no-ui", "--debug", "--host", "adapter", "--port", "18883", "--imei", "352093114305802", "--latitude", "36.8115", "--longitude", "10.1865"]
     networks:
       - fleet-network
     restart: unless-stopped
@@ -43,11 +35,9 @@ services:
       dockerfile: Dockerfile
     container_name: fleet-simulator-3
     depends_on:
-      emqx:
+      adapter:
         condition: service_healthy
-    volumes:
-      - ./certs:/certs:ro
-    command: ["--no-ui", "--debug", "--no-tcp", "--mqtt-host", "emqx", "--mqtt-port", "1883", "--imei", "352093114305803", "--latitude", "36.8165", "--longitude", "10.1915"]
+    command: ["--no-ui", "--debug", "--host", "adapter", "--port", "18883", "--imei", "352093114305803", "--latitude", "36.8165", "--longitude", "10.1915"]
     networks:
       - fleet-network
     restart: unless-stopped
@@ -59,11 +49,9 @@ services:
       dockerfile: Dockerfile
     container_name: fleet-simulator-4
     depends_on:
-      emqx:
+      adapter:
         condition: service_healthy
-    volumes:
-      - ./certs:/certs:ro
-    command: ["--no-ui", "--debug", "--no-tcp", "--mqtt-host", "emqx", "--mqtt-port", "1883", "--imei", "352093114305804", "--latitude", "36.8215", "--longitude", "10.1965"]
+    command: ["--no-ui", "--debug", "--host", "adapter", "--port", "18883", "--imei", "352093114305804", "--latitude", "36.8215", "--longitude", "10.1965"]
     networks:
       - fleet-network
     restart: unless-stopped
@@ -75,73 +63,47 @@ services:
       dockerfile: Dockerfile
     container_name: fleet-simulator-5
     depends_on:
-      emqx:
+      adapter:
         condition: service_healthy
-    volumes:
-      - ./certs:/certs:ro
-    command: ["--no-ui", "--debug", "--no-tcp", "--mqtt-host", "emqx", "--mqtt-port", "1883", "--imei", "352093114305805", "--latitude", "36.8265", "--longitude", "10.2015"]
+    command: ["--no-ui", "--debug", "--host", "adapter", "--port", "18883", "--imei", "352093114305805", "--latitude", "36.8265", "--longitude", "10.2015"]
     networks:
       - fleet-network
     restart: unless-stopped
-
-  # L2 Transport: EMQX MQTT Broker
-  emqx:
-    image: emqx/emqx:5.3.0
-    user: root
-    container_name: fleet-emqx
-    ports:
-      - "1883:1883"    # MQTT plain (local dev)
-      - "8883:8883"    # MQTT over TLS (production)
-      - "18083:18083"  # Admin dashboard
-    environment:
-      EMQX_NODE__NAME: "emqx@127.0.0.1"
-      EMQX_CLUSTER__DISCOVERY_STRATEGY: "manual"
-      EMQX_AUTHORIZATION__NO_MATCH: "allow"
-      EMQX_LOG_CONSOLE_LEVEL: "warning"
-    volumes:
-      - ./data/emqx:/opt/emqx/data
-      - ./certs:/opt/emqx/certs:ro
-      - ./config/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
-    networks:
-      - fleet-network
-    healthcheck:
-      test: ["CMD", "emqx", "ctl", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # Traccar: not used with the C adapter — kept for reference, opt-in only
-  traccar:
-    profiles: [traccar]
-    image: traccar/traccar:latest
-    container_name: fleet-traccar
+  # L2 Adapter: Teltonika TCP → decode Codec 8 → NATS
+  adapter:
+    build:
+      context: ./adapter
+      dockerfile: Dockerfile
+    container_name: fleet-adapter
     depends_on:
-      emqx:
+      nats:
         condition: service_healthy
     ports:
-      - "5055:5055"
-      - "8082:8082"
-    volumes:
-      - ./data/traccar:/opt/traccar/data
-      - ./config/traccar/traccar.xml:/opt/traccar/conf/traccar.xml:ro
+      - "18883:18883"
+    environment:
+      TCP_PORT: 18883
+      NATS_URL: nats://nats:4222
+      NATS_USER: adapter
+      NATS_PASS: ${NATS_ADAPTER_PASSWORD}
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # L3 Message Queue: NATS JetStream
   nats:
     image: nats:2.10-alpine
     container_name: fleet-nats
-    depends_on:
-      emqx:
-        condition: service_healthy
     ports:
       - "4222:4222"    # Client connections
       - "8222:8222"    # Monitoring HTTP
@@ -161,39 +123,6 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
-  # L3 Bridge: MQTT to NATS Adapter
-  adapter:
-    build:
-      context: ./adapter
-      dockerfile: Dockerfile
-    container_name: fleet-adapter
-    depends_on:
-      emqx:
-        condition: service_healthy
-      nats:
-        condition: service_healthy
-    environment:
-      MQTT_HOST: emqx
-      MQTT_PORT: 1883
-      MQTT_PROTOCOL: mqtt
-      NATS_URL: nats://nats:4222
-      NATS_USER: adapter
-      NATS_PASS: ${NATS_ADAPTER_PASSWORD}
-    networks:
-      - fleet-network
-    healthcheck:
-      test: ["CMD-SHELL", "kill -0 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   # L4 Processing: TimescaleDB (Time-series database)
   timescaledb:

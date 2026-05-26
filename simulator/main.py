@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
-import json
 import random
 import threading
 import time
 from typing import Any
-from uuid import uuid4
 
 from car import Car
 from encoder import build_codec8_packet, validate_crc_self_test
@@ -15,11 +12,6 @@ from fmc003 import FMC003
 from network import TeltonikaTCPClient
 from profile import load_profile
 from replay import codec8_record_count, load_hex_packets
-
-try:
-    import paho.mqtt.client as paho_mqtt
-except ImportError:
-    paho_mqtt = None
 
 try:
     from pynput import keyboard
@@ -125,82 +117,6 @@ class KeyboardInputLayer:
             self.listener = None
 
 
-class MqttMirror:
-    def __init__(self, args: argparse.Namespace) -> None:
-        if paho_mqtt is None:
-            raise RuntimeError(
-                "MQTT mirror requested but paho-mqtt is not installed. Install with: pip install paho-mqtt"
-            )
-
-        self.args = args
-
-        # Ensure unique client IDs to prevent MQTT broker from kicking older sessions
-        default_client_id = f"fmc003-{args.imei}-{uuid4().hex[:8]}"
-        callback_api = getattr(paho_mqtt, "CallbackAPIVersion", None)
-        if callback_api is not None:
-            self.client = paho_mqtt.Client(
-                callback_api_version=callback_api.VERSION2,
-                client_id=args.mqtt_client_id or default_client_id,
-            )
-        else:
-            self.client = paho_mqtt.Client(client_id=args.mqtt_client_id or default_client_id)
-        if args.mqtt_username:
-            self.client.username_pw_set(args.mqtt_username, args.mqtt_password)
-
-    def connect(self) -> None:
-        try:
-            self.client.connect(self.args.mqtt_host, self.args.mqtt_port, keepalive=60)
-            self.client.loop_start()
-        except OSError as exc:
-            raise RuntimeError(
-                f"MQTT broker connection failed to {self.args.mqtt_host}:{self.args.mqtt_port}. "
-                "Start EMQX first (e.g. docker compose --env-file .env.example up -d emqx)."
-            ) from exc
-
-    def publish_raw(self, packet: bytes) -> None:
-        topic = self.args.mqtt_raw_topic.format(imei=self.args.imei)
-        info = self.client.publish(topic, packet, qos=self.args.mqtt_qos, retain=False)
-        info.wait_for_publish(timeout=2.0)
-
-    def publish_compat_event(self, record: dict[str, Any], buffered: bool) -> None:
-        if not self.args.mqtt_compat_topic:
-            return
-
-        ts_ms = int(record.get("timestamp_ms", int(time.time() * 1000)))
-        timestamp = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat().replace("+00:00", "Z")
-        event = {
-            "event_id": str(uuid4()),
-            "device_id": self.args.imei,
-            "timestamp": timestamp,
-            "received_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "position": {
-                "lat": float(record.get("latitude", 0.0)),
-                "lng": float(record.get("longitude", 0.0)),
-                "altitude": float(record.get("altitude", 0.0)),
-                "accuracy": 5.0,
-                "bearing": float(record.get("angle", 0.0)),
-                "speed": float(record.get("speed", 0.0)),
-            },
-            "telemetry": {
-                "ignition": bool(record.get("io_elements", {}).get(239, 0)),
-                "fuel_level": float(record.get("io_elements", {}).get(13, 0.0)) / 10.0,
-                "odometer": float(record.get("io_elements", {}).get(16, 0.0)),
-                "rpm": int(record.get("io_elements", {}).get(12, 0)),
-                "engine_load": float(record.get("io_elements", {}).get(21, 0.0)),
-            },
-            "io_events": [],
-            "buffered": buffered,
-        }
-        topic = self.args.mqtt_compat_topic.format(imei=self.args.imei)
-        payload = json.dumps(event, separators=(",", ":"))
-        info = self.client.publish(topic, payload, qos=self.args.mqtt_qos, retain=False)
-        info.wait_for_publish(timeout=2.0)
-
-    def close(self) -> None:
-        self.client.loop_stop()
-        self.client.disconnect()
-
-
 def _on_off(value: bool) -> str:
     return "ON " if value else "OFF"
 
@@ -266,8 +182,7 @@ def render_dashboard(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Teltonika FMC003 high-fidelity emulator")
     parser.add_argument("--host", default="127.0.0.1", help="TCP server host")
-    parser.add_argument("--no-tcp", action="store_true", help="Disable TCP uplink (MQTT-only mode)")
-    parser.add_argument("--port", type=int, default=5055, help="TCP server port")
+    parser.add_argument("--port", type=int, default=18883, help="TCP server port")
     parser.add_argument("--imei", default="352093114305816", help="15-digit device IMEI")
     parser.add_argument("--latitude", type=float, default=36.8065, help="Initial latitude")
     parser.add_argument("--longitude", type=float, default=10.1815, help="Initial longitude")
@@ -288,22 +203,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--replay-loop", action="store_true", help="Loop replay packet sequence indefinitely")
     parser.add_argument("--replay-interval", type=float, default=1.0, help="Delay between replay packets in seconds")
-    parser.add_argument("--mqtt-host", default=None, help="Optional MQTT broker host to mirror sent data")
-    parser.add_argument("--mqtt-port", type=int, default=1883, help="MQTT broker port")
-    parser.add_argument("--mqtt-username", default=None, help="MQTT username")
-    parser.add_argument("--mqtt-password", default=None, help="MQTT password")
-    parser.add_argument("--mqtt-client-id", default=None, help="MQTT client ID")
-    parser.add_argument("--mqtt-qos", type=int, default=1, help="MQTT QoS for mirror publish")
-    parser.add_argument(
-        "--mqtt-raw-topic",
-        default="teltonika/{imei}/codec8/raw",
-        help="MQTT topic template for raw Codec8 bytes (supports {imei})",
-    )
-    parser.add_argument(
-        "--mqtt-compat-topic",
-        default="telemetry/{imei}/raw",
-        help="Optional adapter-compatible JSON topic template (supports {imei}); empty disables",
-    )
     return parser.parse_args()
 
 
@@ -350,21 +249,8 @@ def main() -> int:
         raise ValueError("max-buffer must be > 0")
     if args.replay_interval <= 0:
         raise ValueError("replay-interval must be > 0")
-    if args.mqtt_qos < 0 or args.mqtt_qos > 2:
-        raise ValueError("mqtt-qos must be 0, 1, or 2")
     if not validate_crc_self_test():
         raise RuntimeError("CRC-16/IBM self-test failed")
-
-    mqtt_mirror: MqttMirror | None = None
-    if args.mqtt_host:
-        mqtt_mirror = MqttMirror(args)
-        mqtt_mirror.connect()
-        raw_topic = args.mqtt_raw_topic.format(imei=args.imei)
-        compat_topic = args.mqtt_compat_topic.format(imei=args.imei) if args.mqtt_compat_topic else "disabled"
-        print(
-            f"[sim] MQTT mirror enabled -> {args.mqtt_host}:{args.mqtt_port} "
-            f"raw={raw_topic} compat={compat_topic}"
-        )
 
     if args.replay_hex_file:
         replay_packets = load_hex_packets(args.replay_hex_file)
@@ -388,9 +274,6 @@ def main() -> int:
                         client.connect_and_login(args.imei)
                         ack = client.send_avl_packet(packet, records_sent=records)
 
-                    if mqtt_mirror is not None:
-                        mqtt_mirror.publish_raw(packet)
-
                     if args.debug:
                         print(
                             f"[sim] replay packet={idx}/{len(replay_packets)} "
@@ -405,8 +288,6 @@ def main() -> int:
             print("\n[sim] Stopping replay")
         finally:
             client.close()
-            if mqtt_mirror is not None:
-                mqtt_mirror.close()
 
         return 0
 
@@ -434,7 +315,7 @@ def main() -> int:
 
     controls = ControlState()
     keyboard_input = KeyboardInputLayer(controls)
-    client = TeltonikaTCPClient(host=args.host, port=args.port) if not args.no_tcp else None
+    client = TeltonikaTCPClient(host=args.host, port=args.port)
 
     pending_records: list[dict[str, Any]] = []
     last_record: dict[str, Any] | None = None
@@ -451,7 +332,7 @@ def main() -> int:
         keyboard_input.start()
     print(
         "[sim] Input active. Arrow keys/WASD to drive, I to toggle ignition. "
-        f"Target={args.mqtt_host}:{args.mqtt_port} IMEI={args.imei}"
+        f"Target={args.host}:{args.port} IMEI={args.imei}"
     )
 
     try:
@@ -482,28 +363,21 @@ def main() -> int:
                 packet = build_codec8_packet(to_send)
                 last_packet_size = len(packet)
 
-                if client is not None:
-                    try:
-                        if not connected:
-                            client.connect_and_login(args.imei, retries=1)
-                            connected = True
-                            if args.debug:
-                                print("[sim] Connected and authenticated")
+                try:
+                    if not connected:
+                        client.connect_and_login(args.imei, retries=1)
+                        connected = True
+                        if args.debug:
+                            print("[sim] Connected and authenticated")
 
-                        ack = client.send_avl_packet(packet, records_sent=send_count)
-                        last_ack = ack
-                        del pending_records[:ack]
-                    except (OSError, TimeoutError, ConnectionError) as exc:
-                        if connected or args.debug:
-                            print(f"[sim] Link issue ({exc}). Keeping {len(pending_records)} buffered records.")
-                        connected = False
-                        client.close()
-
-                if mqtt_mirror is not None and last_record is not None:
-                    mqtt_mirror.publish_raw(packet)
-                    mqtt_mirror.publish_compat_event(last_record, buffered=len(pending_records) > 0)
-                    if args.no_tcp:
-                        del pending_records[:send_count]
+                    ack = client.send_avl_packet(packet, records_sent=send_count)
+                    last_ack = ack
+                    del pending_records[:ack]
+                except (OSError, TimeoutError, ConnectionError) as exc:
+                    if connected or args.debug:
+                        print(f"[sim] Link issue ({exc}). Keeping {len(pending_records)} buffered records.")
+                    connected = False
+                    client.close()
 
                 if args.no_ui and args.debug and last_record is not None:
                     print(
@@ -539,10 +413,7 @@ def main() -> int:
         print("\n[sim] Stopping simulator")
     finally:
         keyboard_input.stop()
-        if client is not None:
-            client.close()
-        if mqtt_mirror is not None:
-            mqtt_mirror.close()
+        client.close()
 
     return 0
 

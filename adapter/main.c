@@ -1,6 +1,6 @@
 #include "decoder.h"
 #include "nats-pub.h"
-#include "mqtt-sub.h"
+#include "tcp-listen.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,27 +76,23 @@ int main() {
         return 0;
     }
 
-    // MQTT
-    const char *mqtt_host = getenv("MQTT_HOST");
-    if (!mqtt_host) mqtt_host = "localhost";
+    // TCP listener for Teltonika devices
+    int tcp_port = 18883;
+    const char *port_str = getenv("TCP_PORT");
+    if (port_str) tcp_port = atoi(port_str);
 
-    int mqtt_port = 1883;
-    const char *port_str = getenv("MQTT_PORT");
-    if (port_str) mqtt_port = atoi(port_str);
-
-    if (mqtt_sub_init(mqtt_host, mqtt_port, on_packet) != 0) {
-        fprintf(stderr, "[ADAPTER] Failed to connect to EMQX\n");
+    if (tcp_listen_init(tcp_port, on_packet) != 0) {
+        fprintf(stderr, "[ADAPTER] Failed to start TCP listener\n");
         nats_pub_close();
         return 1;
     }
 
-    printf("[ADAPTER] Running: EMQX (%s:%d) -> decode -> NATS (%s)\n\n",
-           mqtt_host, mqtt_port, nats_url);
+    printf("[ADAPTER] Running: TCP (%d) -> decode -> NATS (%s)\n\n",
+           tcp_port, nats_url);
 
-    // Blocks until SIGINT/SIGTERM
-    mqtt_sub_loop(&running);
+    tcp_listen_loop(&running);
 
-    mqtt_sub_close();
+    tcp_listen_close();
     nats_pub_close();
     printf("[ADAPTER] Shutdown complete\n");
     return 0;

@@ -2,7 +2,7 @@ FROM debian:bookworm-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ libc6-dev make cmake git ca-certificates \
-    libmosquitto-dev libssl-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Build nats.c from source
@@ -16,14 +16,14 @@ RUN git clone --depth 1 https://github.com/nats-io/nats.c.git . && \
 WORKDIR /build
 COPY *.c *.h ./
 RUN gcc -Wall -Wextra -O2 -o adapter \
-    main.c decoder.c nats-pub.c mqtt-sub.c \
+    main.c decoder.c nats-pub.c tcp-listen.c \
     -I/usr/local/include -L/usr/local/lib \
-    -lnats -lmosquitto
+    -lnats
 
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libmosquitto1 curl libssl3 \
+    curl libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
