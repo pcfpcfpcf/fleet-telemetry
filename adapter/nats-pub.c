@@ -15,6 +15,11 @@ int nats_pub_init(const char *url) {
     if (s == NATS_OK && url) {
         s = natsOptions_SetURL(opts, url);
     }
+    const char *user = getenv("NATS_USER");
+    const char *pass = getenv("NATS_PASS");
+    if (s == NATS_OK && user && pass) {
+        s = natsOptions_SetUserInfo(opts, user, pass);
+    }
     if (s == NATS_OK) {
         s = natsConnection_Connect(&conn, opts);
     }

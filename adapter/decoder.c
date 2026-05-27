@@ -80,31 +80,35 @@ static uint64_t r64(const uint8_t *b, int *p) {
     return v;
 }
 
-static int parse_io8(const uint8_t *buf, int *pos, AVLRecord *rec) {
+static int parse_io8(const uint8_t *buf, int *pos, int buf_len, AVLRecord *rec) {
     int n = 0;
     uint8_t n1 = r8(buf, pos);
-    for (int i = 0; i < n1; i++) {
+    for (int i = 0; i < n1 && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 2 > buf_len) return n;
         uint8_t id = r8(buf, pos); uint8_t val = r8(buf, pos);
         rec->events[n] = (Event){ .id=id, .val=val };
         strncpy(rec->events[n].name, id_to_name(id), 49);
         n++;
     }
     uint8_t n2 = r8(buf, pos);
-    for (int i = 0; i < n2; i++) {
+    for (int i = 0; i < n2 && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 3 > buf_len) return n;
         uint8_t id = r8(buf, pos); uint16_t val = r16(buf, pos);
         rec->events[n] = (Event){ .id=id, .val=val };
         strncpy(rec->events[n].name, id_to_name(id), 49);
         n++;
     }
     uint8_t n4 = r8(buf, pos);
-    for (int i = 0; i < n4; i++) {
+    for (int i = 0; i < n4 && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 5 > buf_len) return n;
         uint8_t id = r8(buf, pos); uint32_t val = r32(buf, pos);
         rec->events[n] = (Event){ .id=id, .val=val };
         strncpy(rec->events[n].name, id_to_name(id), 49);
         n++;
     }
     uint8_t n8 = r8(buf, pos);
-    for (int i = 0; i < n8; i++) {
+    for (int i = 0; i < n8 && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 9 > buf_len) return n;
         uint8_t id = r8(buf, pos); uint64_t val = r64(buf, pos);
         rec->events[n] = (Event){ .id=id, .val=(int64_t)val };
         strncpy(rec->events[n].name, id_to_name(id), 49);
@@ -113,42 +117,66 @@ static int parse_io8(const uint8_t *buf, int *pos, AVLRecord *rec) {
     return n;
 }
 
-static int parse_io8e(const uint8_t *buf, int *pos, AVLRecord *rec) {
+static int parse_io8e(const uint8_t *buf, int *pos, int buf_len, AVLRecord *rec) {
     int n = 0;
     uint16_t n1 = r16(buf, pos);
-    for (int i = 0; i < n1; i++) {
+    for (int i = 0; i < n1 && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 3 > buf_len) return n;
         uint16_t id = r16(buf, pos); uint8_t val = r8(buf, pos);
         rec->events[n] = (Event){ .id=id, .val=val };
         strncpy(rec->events[n].name, id_to_name(id), 49);
         n++;
     }
     uint16_t n2 = r16(buf, pos);
-    for (int i = 0; i < n2; i++) {
+    for (int i = 0; i < n2 && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 4 > buf_len) return n;
         uint16_t id = r16(buf, pos); uint16_t val = r16(buf, pos);
         rec->events[n] = (Event){ .id=id, .val=val };
         strncpy(rec->events[n].name, id_to_name(id), 49);
         n++;
     }
     uint16_t n4 = r16(buf, pos);
-    for (int i = 0; i < n4; i++) {
+    for (int i = 0; i < n4 && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 6 > buf_len) return n;
         uint16_t id = r16(buf, pos); uint32_t val = r32(buf, pos);
         rec->events[n] = (Event){ .id=id, .val=val };
         strncpy(rec->events[n].name, id_to_name(id), 49);
         n++;
     }
     uint16_t n8 = r16(buf, pos);
-    for (int i = 0; i < n8; i++) {
+    for (int i = 0; i < n8 && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 10 > buf_len) return n;
         uint16_t id = r16(buf, pos); uint64_t val = r64(buf, pos);
         rec->events[n] = (Event){ .id=id, .val=(int64_t)val };
+        strncpy(rec->events[n].name, id_to_name(id), 49);
+        n++;
+    }
+    /* Codec 8E variable-length (NX) section */
+    if (*pos + 2 > buf_len) return n;
+    uint16_t nX = r16(buf, pos);
+    for (int i = 0; i < nX && n < MAX_IO_PER_RECORD; i++) {
+        if (*pos + 4 > buf_len) return n;
+        uint16_t id   = r16(buf, pos);
+        uint16_t vlen = r16(buf, pos);
+        if (*pos + vlen > buf_len) return n;
+        int64_t val = 0;
+        if (vlen <= 8) {
+            for (int j = 0; j < vlen; j++)
+                val = (val << 8) | r8(buf, pos);
+        } else {
+            *pos += vlen;
+        }
+        rec->events[n] = (Event){ .id=id, .val=val };
         strncpy(rec->events[n].name, id_to_name(id), 49);
         n++;
     }
     return n;
 }
 
-static int parse_records(const uint8_t *buf, int *pos,
+static int parse_records(const uint8_t *buf, int *pos, int buf_len,
                          uint8_t codec_id, uint8_t num, AVLRecord *records) {
     for (int r = 0; r < num; r++) {
+        if (*pos + 24 > buf_len) return -1;
         AVLRecord *rec  = &records[r];
         rec->timestamp  = (int64_t)r64(buf, pos);
         rec->priority   = r8(buf, pos);
@@ -158,11 +186,15 @@ static int parse_records(const uint8_t *buf, int *pos,
         rec->angle      = r16(buf, pos);
         rec->satellites = r8(buf, pos);
         rec->speed      = r16(buf, pos);
-        rec->event_io_id = r8(buf, pos);
-        r8(buf, pos);   // N of total IO (we recount from groups)
-        rec->event_count = (codec_id == 0x8E)
-                         ? parse_io8e(buf, pos, rec)
-                         : parse_io8 (buf, pos, rec);
+        if (codec_id == 0x8E) {
+            rec->event_io_id = r16(buf, pos);
+            r16(buf, pos);   // N of total IO (we recount from groups)
+            rec->event_count = parse_io8e(buf, pos, buf_len, rec);
+        } else {
+            rec->event_io_id = r8(buf, pos);
+            r8(buf, pos);    // N of total IO (we recount from groups)
+            rec->event_count = parse_io8(buf, pos, buf_len, rec);
+        }
     }
     return 0;
 }
@@ -200,7 +232,7 @@ int decode_packet(const uint8_t *buf, int len, AVLPacket *out) {
 
     if (out->codec_id != 0x08 && out->codec_id != 0x8E) return -1;
 
-    return parse_records(buf, &pos, out->codec_id, num_records, out->records);
+    return parse_records(buf, &pos, len, out->codec_id, num_records, out->records);
 }
 
 
