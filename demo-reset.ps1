@@ -1,3 +1,4 @@
+echo $env:DATABASE_URL
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+
+    <!-- Sync latest vehicle states every minute -->
     <record id="ir_cron_fleet_telemetry_sync" model="ir.cron">
         <field name="name">Fleet Telemetry Sync</field>
         <field name="model_id" ref="model_fleet_vehicle_telemetry"/>
@@ -10,4 +12,17 @@
         <field name="numbercall">-1</field>
         <field name="active">True</field>
     </record>
+
+    <!-- Sync vehicle diagnostics every 5 minutes -->
+    <record id="ir_cron_fleet_diagnostics_sync" model="ir.cron">
+        <field name="name">Fleet Vehicle Diagnostics Sync</field>
+        <field name="model_id" ref="model_fleet_vehicle_diagnostics"/>
+        <field name="state">code</field>
+        <field name="code">model.sync_diagnostics_from_l4()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="numbercall">-1</field>
+        <field name="active">True</field>
+    </record>
+
 </odoo>

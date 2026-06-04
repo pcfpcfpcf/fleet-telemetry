@@ -1,13 +1,405 @@
-.o_fleet_dashboard {
-    height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 24px;
-    background: #f8fafc;
+// ── Fleet Telemetry Dashboard — Production Styles ──────────────────────────────
+// Design system: slate neutrals, semantic colour accents, tight grid layout.
 
-    // Ensure the map container has proper height
-    #fleetMap {
-        min-height: 400px;
-        width: 100%;
+$bg:        #f1f5f9;
+$surface:   #ffffff;
+$border:    #e2e8f0;
+$text-1:    #0f172a;
+$text-2:    #475569;
+$text-3:    #94a3b8;
+$radius:    12px;
+$radius-sm: 7px;
+$shadow:    0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.05);
+$shadow-md: 0 4px 12px rgba(0,0,0,.08);
+
+$green:  #10b981; $green-lt:  #d1fae5; $green-dk:  #065f46;
+$red:    #ef4444; $red-lt:    #fee2e2; $red-dk:    #991b1b;
+$amber:  #f59e0b; $amber-lt:  #fef3c7; $amber-dk:  #92400e;
+$blue:   #3b82f6; $blue-lt:   #dbeafe; $blue-dk:   #1e40af;
+$indigo: #6366f1; $indigo-lt: #e0e7ff;
+$purple: #8b5cf6; $purple-lt: #ede9fe;
+$slate:  #64748b; $slate-lt:  #f8fafc;
+
+// ── Root container ────────────────────────────────────────────────────────────
+.o_fleet_dashboard {
+  padding: 20px 24px;
+  background: $bg;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  color: $text-1;
+}
+
+// ── Top bar ───────────────────────────────────────────────────────────────────
+.ftd-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.ftd-topbar-left { display: flex; align-items: center; gap: 10px; }
+.ftd-topbar-right { color: $text-3; font-size: 12px; }
+
+.ftd-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: $text-1;
+  letter-spacing: -.3px;
+}
+
+.ftd-last-update { font-size: 12px; color: $text-3; }
+
+// ── Badges ────────────────────────────────────────────────────────────────────
+.ftd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.ftd-badge--live    { background: $green-lt; color: $green-dk; }
+.ftd-badge--offline { background: $red-lt;   color: $red-dk; }
+.ftd-badge--count   { background: $indigo-lt; color: $indigo; font-size: 10px; padding: 1px 7px; }
+
+// Animated pulse dot for live indicator
+.ftd-pulse {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: $green;
+  animation: ftd-pulse 1.6s infinite;
+}
+@keyframes ftd-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.5); opacity: 0.5; }
+}
+
+// ── Cards ─────────────────────────────────────────────────────────────────────
+.ftd-card {
+  background: $surface;
+  border-radius: $radius;
+  box-shadow: $shadow;
+  border: 1px solid $border;
+  overflow: hidden;
+}
+
+.ftd-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-1;
+  border-bottom: 1px solid $border;
+}
+
+.ftd-unit { font-weight: 400; color: $text-3; font-size: 12px; }
+
+// ── KPI grid ──────────────────────────────────────────────────────────────────
+.ftd-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+
+  @media (max-width: 1200px) { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 700px)  { grid-template-columns: repeat(2, 1fr); }
+}
+
+.ftd-kpi {
+  @extend .ftd-card;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+
+  &--green { background: $green-lt; border-color: darken($green-lt, 5%); }
+  &--warn  { background: $amber-lt; border-color: darken($amber-lt, 5%); }
+}
+
+.ftd-kpi-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  &--indigo { background: $indigo-lt; }
+  &--green  { background: $green-lt; }
+  &--blue   { background: $blue-lt; }
+  &--purple { background: $purple-lt; }
+  &--amber  { background: $amber-lt; }
+  &--slate  { background: #f1f5f9; }
+}
+
+.ftd-kpi-body { min-width: 0; }
+.ftd-kpi-label { font-size: 11px; font-weight: 500; color: $text-2; text-transform: uppercase; letter-spacing: .04em; }
+.ftd-kpi-value {
+  font-size: 26px; font-weight: 700; color: $text-1; line-height: 1.1; margin-top: 2px;
+  &--green  { color: $green; }
+  &--blue   { color: $blue; }
+  &--purple { color: $purple; }
+  &--amber  { color: $amber; }
+  &--red    { color: $red; }
+}
+.ftd-kpi-unit { font-size: 13px; font-weight: 400; color: $text-2; }
+.ftd-kpi-sep  { color: $text-3; margin: 0 2px; }
+
+// ── Row layouts ───────────────────────────────────────────────────────────────
+.ftd-row { display: grid; gap: 16px; margin-bottom: 16px; }
+
+.ftd-row--charts {
+  grid-template-columns: 1fr 1fr 220px;
+  @media (max-width: 1100px) { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 700px)  { grid-template-columns: 1fr; }
+}
+
+.ftd-row--main {
+  grid-template-columns: 1fr 340px;
+  @media (max-width: 1000px) { grid-template-columns: 1fr; }
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+.ftd-chart-card { padding: 0; }
+.ftd-chart-card .ftd-card-header { padding: 12px 16px 10px; }
+
+.ftd-canvas {
+  display: block;
+  padding: 8px 16px 16px;
+  max-height: 180px;
+}
+
+.ftd-chart-card--sm .ftd-canvas { max-height: 160px; padding: 8px 20px 0; }
+
+.ftd-ign-legend {
+  display: flex; gap: 16px; align-items: center;
+  padding: 8px 20px 14px;
+  font-size: 12px; color: $text-2;
+}
+
+.ftd-dot {
+  display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%;
+  &--green { background: $green; }
+  &--slate { background: #cbd5e1; }
+  &--red   { background: $red; }
+  &--amber { background: $amber; }
+}
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+.ftd-map-card { display: flex; flex-direction: column; }
+.ftd-map {
+  flex: 1;
+  min-height: 360px;
+  border-radius: 0 0 $radius $radius;
+}
+
+// ── Alert feed ────────────────────────────────────────────────────────────────
+.ftd-alerts-card {
+  display: flex;
+  flex-direction: column;
+  max-height: 440px;
+}
+
+.ftd-alerts-list {
+  overflow-y: auto;
+  padding: 8px;
+  flex: 1;
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: $border; border-radius: 4px; }
+}
+
+.ftd-alert-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  border-radius: $radius-sm;
+  margin-bottom: 4px;
+  border-left: 3px solid transparent;
+  font-size: 12px;
+  transition: background .15s;
+
+  &--critical { background: $red-lt;   border-color: $red;   }
+  &--warning  { background: $amber-lt; border-color: $amber; }
+  &--info     { background: $blue-lt;  border-color: $blue;  }
+}
+
+.ftd-alert-sev {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 1px;
+  background: rgba(0,0,0,.05);
+}
+
+.ftd-alert-type { font-weight: 600; color: $text-1; }
+.ftd-alert-meta { color: $text-3; margin-top: 1px; font-size: 11px; }
+
+.ftd-empty { text-align: center; padding: 32px 0; color: $text-3; font-size: 13px; }
+
+// ── Vehicle table ─────────────────────────────────────────────────────────────
+.ftd-table-card { margin-bottom: 24px; }
+
+.ftd-table-count { margin-left: auto; font-size: 12px; font-weight: 400; color: $text-3; }
+
+.ftd-table-wrap {
+  overflow-x: auto;
+  &::-webkit-scrollbar { height: 4px; }
+  &::-webkit-scrollbar-thumb { background: $border; border-radius: 4px; }
+}
+
+.ftd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 760px;
+
+  thead tr {
+    background: $slate-lt;
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: $text-2;
+      white-space: nowrap;
+      border-bottom: 1px solid $border;
     }
+  }
+
+  tbody tr {
+    border-bottom: 1px solid $border;
+    transition: background .1s;
+    &:last-child { border-bottom: none; }
+    &:hover { background: #f8fafc; }
+    &.ftd-tr--stale { opacity: 0.55; }
+  }
+
+  td {
+    padding: 10px 14px;
+    color: $text-1;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+}
+
+.ftd-td-num  { font-variant-numeric: tabular-nums; color: $text-2; }
+.ftd-td-age  { color: $text-3; font-size: 12px; }
+.ftd-td-id   { font-family: "SF Mono", "Fira Code", monospace; }
+
+.ftd-device-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: #f1f5f9;
+  font-size: 12px;
+  font-weight: 600;
+  color: $indigo;
+  letter-spacing: .02em;
+}
+
+// ── Status pills ──────────────────────────────────────────────────────────────
+.ftd-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+
+  &--moving { background: $green-lt; color: $green-dk; }
+  &--idle   { background: $amber-lt; color: $amber-dk; }
+  &--off    { background: #f1f5f9;   color: $slate; }
+}
+
+// ── Fuel bar ──────────────────────────────────────────────────────────────────
+.ftd-fuel-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ftd-fuel-bar-bg {
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  background: #e2e8f0;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.ftd-fuel-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .4s ease;
+  &--ok  { background: $green; }
+  &--mid { background: $amber; }
+  &--low { background: $red;   }
+}
+
+.ftd-fuel-label { font-size: 12px; color: $text-2; }
+
+// ── GSM signal bars ───────────────────────────────────────────────────────────
+.ftd-signal-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.ftd-bar {
+  width: 4px;
+  border-radius: 2px;
+  background: $border;
+  &:nth-child(1) { height: 3px; }
+  &:nth-child(2) { height: 5px; }
+  &:nth-child(3) { height: 7px; }
+  &:nth-child(4) { height: 10px; }
+  &:nth-child(5) { height: 13px; }
+  &--active { background: $green; }
+}
+
+// ── Loading skeleton ──────────────────────────────────────────────────────────
+@keyframes ftd-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.ftd-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ftd-skeleton-card {
+  @extend .ftd-card;
+  padding: 16px;
+  min-height: 80px;
+  &--tall { min-height: 240px; }
+}
+
+.ftd-skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 400px 100%;
+  animation: ftd-shimmer 1.4s infinite;
+  margin-bottom: 10px;
+  &--short { width: 50%; margin-bottom: 16px; height: 8px; }
 }

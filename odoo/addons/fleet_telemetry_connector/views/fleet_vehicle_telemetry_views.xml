@@ -50,7 +50,11 @@
                     <field name="longitude"/>
                     <field name="speed"/>
                     <field name="fuel_level"/>
+                    <field name="odometer"/>
+                    <field name="rpm"/>
+                    <field name="engine_load"/>
                     <field name="ignition"/>
+                    <field name="buffered"/>
                 </tree>
             </field>
         </record>
@@ -64,29 +68,47 @@
             <field name="arch" type="xml">
                 <form string="Vehicle Telemetry">
                     <header>
-                        <button name="action_refresh_from_l4" string="Refresh from L4" type="object" class="btn-primary"/>
+                        <button name="action_open_asset_detail" string="Asset Detail" type="object" class="btn-primary"/>
+                        <button name="action_refresh_from_l4" string="Refresh Latest" type="object"/>
                     </header>
                     <sheet>
-                        <group>
+                        <group string="Identity">
                             <group>
                                 <field name="device_id"/>
-                                <field name="timestamp"/>
-                                <field name="ignition"/>
+                                <field name="event_id"/>
+                                <field name="buffered"/>
                             </group>
                             <group>
-                                <field name="speed"/>
-                                <field name="fuel_level"/>
+                                <field name="timestamp"/>
+                                <field name="received_at"/>
                             </group>
                         </group>
-                        <group>
+                        <group string="Position">
                             <group>
                                 <field name="latitude"/>
                                 <field name="longitude"/>
                             </group>
+                            <group>
+                                <field name="altitude"/>
+                                <field name="bearing"/>
+                                <field name="accuracy"/>
+                            </group>
+                        </group>
+                        <group string="Telemetry">
+                            <group>
+                                <field name="ignition"/>
+                                <field name="speed"/>
+                                <field name="fuel_level"/>
+                            </group>
+                            <group>
+                                <field name="odometer"/>
+                                <field name="rpm"/>
+                                <field name="engine_load"/>
+                            </group>
                         </group>
                         <notebook>
                             <page string="Raw Payload">
-                                <field name="payload" nolabel="1"/>
+                                <field name="payload" nolabel="1" widget="code"/>
                             </page>
                         </notebook>
                     </sheet>

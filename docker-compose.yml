@@ -191,21 +191,27 @@ services:
     image: odoo:17
     user: root
     container_name: fleet-odoo-init
+    # Initialises the Odoo database with base + web + fleet then sets the
+    # web.base.url system parameter so redirects work behind Docker port mapping.
+    # The --config flag is required so Odoo picks up addons_path from odoo.conf.
+    # The .initialized flag prevents re-running on every `up`.
     command: >
       bash -c "
         if [ ! -f /var/lib/odoo/.initialized ]; then
-          echo 'Initializing Odoo database...' &&
-          odoo -d odoo --init=base --stop-after-init &&
+          echo '[odoo-init] Initializing Odoo database...' &&
+          odoo --config=/etc/odoo/odoo.conf -d ${ODOO_DB:-odoo}
+            --init=base,web,mail,fleet
+            --without-demo=all
+            --stop-after-init &&
           touch /var/lib/odoo/.initialized &&
-          echo 'Init complete.'
+          echo '[odoo-init] Init complete.'
         else
-          echo 'Already initialized, skipping.'
+          echo '[odoo-init] Already initialized, skipping.'
         fi
       "
     depends_on:
       odoo-db:
         condition: service_healthy
-
     environment:
       HOST: odoo-db
       PORT: 5432
@@ -231,7 +237,7 @@ services:
         condition: service_healthy
       l4-service:
         condition: service_healthy
-        required: false 
+        required: false
     ports:
       - "8069:8069"    # Web UI
       - "8072:8072"    # WebSocket/longpolling
@@ -241,8 +247,8 @@ services:
       USER: ${ODOO_USER:-odoo}
       PASSWORD: ${ODOO_PASSWORD:-odoo}
       PGSSLMODE: prefer
+      # L4 service API key — picked up by the Odoo addon via os.getenv
       L4_API_KEY: ${API_KEY}
-      ADDONS_PATH: /usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
     volumes:
       - ./data/odoo:/var/lib/odoo
       - ./odoo/addons:/mnt/extra-addons
@@ -250,11 +256,11 @@ services:
     networks:
       - fleet-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8069"]
+      test: ["CMD", "curl", "-f", "http://localhost:8069/web/health"]
       interval: 15s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
 
   odoo-module-init:
@@ -266,24 +272,25 @@ services:
         condition: service_completed_successfully
       odoo-db:
         condition: service_healthy
-    command: >
-      odoo -d ${ODOO_DB:-odoo}
-      -i fleet_telemetry_connector
-      -u fleet_telemetry_connector
-      --without-demo=all
-      --stop-after-init
+    # Uses config/odoo/module-init.sh to:
+    #   1. Install fleet_telemetry_connector (and its fleet dependency)
+    #   2. Set web.base.url so browser-side redirects resolve to localhost:8069
+    command: ["bash", "/etc/odoo/module-init.sh"]
     environment:
       HOST: odoo-db
       PORT: 5432
       USER: ${ODOO_USER:-odoo}
       PASSWORD: ${ODOO_PASSWORD:-odoo}
+      ODOO_DB: ${ODOO_DB:-odoo}
+      ODOO_USER: ${ODOO_USER:-odoo}
+      ODOO_PASSWORD: ${ODOO_PASSWORD:-odoo}
       PGSSLMODE: prefer
       L4_API_KEY: ${API_KEY}
-      ADDONS_PATH: /usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
     volumes:
       - ./data/odoo:/var/lib/odoo
       - ./odoo/addons:/mnt/extra-addons
       - ./config/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+      - ./config/odoo/module-init.sh:/etc/odoo/module-init.sh:ro
     networks:
       - fleet-network
     restart: "no"

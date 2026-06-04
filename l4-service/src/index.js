@@ -1,6 +1,9 @@
 import { startApi } from './api.js';
 import { startConsumer } from './consumer.js';
 import { pool } from './db.js';
+import { createTelemetryRepository } from './telemetry-repository.js';
+import { createTelemetryService } from './telemetry-service.js';
+import { startOfflineMonitor, loadGeofences, setupGeofenceListener, seedAlertStateFromDb } from './alerts.js';
 
 console.log('[L4] Starting Fleet Telemetry L4 Processing Service...');
 
@@ -19,5 +22,11 @@ async function waitForDb(retries = 10) {
 }
 
 await waitForDb();
-const broadcast = startApi();
+const repository = createTelemetryRepository(pool);
+const service = createTelemetryService(repository);
+const broadcast = startApi(service);
+startOfflineMonitor(broadcast);
+await loadGeofences();
+await setupGeofenceListener();
+await seedAlertStateFromDb();
 await startConsumer(broadcast);

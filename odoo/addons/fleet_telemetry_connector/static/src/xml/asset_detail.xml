@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+<t t-name="fleet_telemetry_connector.AssetDetail">
+<div class="o_fleet_asset_detail" style="padding:24px; background:#f8fafc; min-height:100vh;">
+
+    <!-- ── Header ────────────────────────────────────────────────────────── -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+        <div>
+            <h2 style="margin:0; color:#1e293b; font-size:1.4rem;">Asset Detail</h2>
+            <div t-if="state.deviceId" style="color:#64748b; font-size:0.85rem; margin-top:2px;">
+                Device: <strong><t t-esc="state.deviceId"/></strong>
+            </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <input
+                t-model="state.deviceId"
+                t-on-keydown.enter="onSearch"
+                placeholder="Enter Device ID…"
+                style="border:1px solid #e2e8f0; border-radius:8px; padding:7px 12px; font-size:0.9rem; width:200px;"
+            />
+            <button t-on-click="onSearch"
+                style="background:#6366f1; color:white; border:none; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:0.9rem;">
+                Search
+            </button>
+            <button t-on-click="onRefresh"
+                style="background:#e2e8f0; color:#374151; border:none; padding:8px 14px; border-radius:8px; cursor:pointer; font-size:0.9rem;">
+                ⟳ Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- ── Error banner ───────────────────────────────────────────────────── -->
+    <div t-if="state.error"
+         style="background:#fee2e2; color:#991b1b; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.9rem;">
+        <t t-esc="state.error"/>
+    </div>
+
+    <!-- ── Loading ────────────────────────────────────────────────────────── -->
+    <t t-if="state.loading">
+        <div style="text-align:center; padding:80px; color:#94a3b8;">Loading asset data…</div>
+    </t>
+
+    <!-- ── No device selected ─────────────────────────────────────────────── -->
+    <t t-elif="!state.deviceId">
+        <div style="text-align:center; padding:80px; color:#94a3b8;">
+            Enter a Device ID to view its telemetry.
+        </div>
+    </t>
+
+    <!-- ── Main content ───────────────────────────────────────────────────── -->
+    <t t-else="">
+
+        <!-- Tab Bar -->
+        <div style="display:flex; gap:4px; margin-bottom:20px; border-bottom:2px solid #e2e8f0;">
+            <t t-foreach="[
+                ['state','Current State'],
+                ['history','History'],
+                ['timeline','Timeline'],
+                ['alerts','Alerts'],
+                ['diagnostics','Diagnostics']
+            ]" t-as="tab" t-key="tab[0]">
+                <button
+                    t-on-click="() => setTab(tab[0])"
+                    t-attf-style="
+                        border:none; background:none; padding:10px 18px;
+                        cursor:pointer; font-size:0.9rem; font-weight:500;
+                        border-bottom: {{state.activeTab === tab[0] ? '2px solid #6366f1' : '2px solid transparent'}};
+                        color: {{state.activeTab === tab[0] ? '#6366f1' : '#64748b'}};
+                        margin-bottom:-2px;
+                    ">
+                    <t t-esc="tab[1]"/>
+                    <!-- Alert count badge -->
+                    <t t-if="tab[0] === 'alerts' and state.alerts.length">
+                        <span style="background:#ef4444; color:white; border-radius:10px; padding:1px 6px; font-size:0.7rem; margin-left:4px;">
+                            <t t-esc="state.alerts.length"/>
+                        </span>
+                    </t>
+                </button>
+            </t>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             TAB: CURRENT STATE
+             ════════════════════════════════════════════════════════════ -->
+        <t t-if="state.activeTab === 'state'">
+            <t t-if="!state.latest">
+                <div style="text-align:center; padding:60px; color:#94a3b8;">No data available for this device.</div>
+            </t>
+            <t t-else="">
+                <!-- State KPI grid -->
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:20px;">
+
+                    <!-- Ignition -->
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Ignition</div>
+                        <span t-attf-style="{{ignitionStyle}} padding:4px 14px; border-radius:20px; font-size:1.1rem; font-weight:700;">
+                            <t t-esc="ignitionLabel"/>
+                        </span>
+                    </div>
+
+                    <!-- Speed -->
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Speed</div>
+                        <div style="font-size:1.8rem; font-weight:700; color:#6366f1;"><t t-esc="speedDisplay"/></div>
+                    </div>
+
+                    <!-- Fuel -->
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Fuel Level</div>
+                        <div t-attf-style="font-size:1.8rem; font-weight:700; color:{{state.latest.fuel_level &lt; 20 ? '#ef4444' : state.latest.fuel_level &lt; 50 ? '#f59e0b' : '#10b981'}};">
+                            <t t-esc="fuelDisplay"/>
+                        </div>
+                    </div>
+
+                    <!-- Odometer -->
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Odometer</div>
+                        <div style="font-size:1.6rem; font-weight:700; color:#1e293b;"><t t-esc="odometerDisplay"/></div>
+                    </div>
+
+                    <!-- Engine Load -->
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Engine Load</div>
+                        <div style="font-size:1.6rem; font-weight:700; color:#1e293b;"><t t-esc="engineLoadDisplay"/></div>
+                    </div>
+
+                    <!-- RPM -->
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">RPM</div>
+                        <div style="font-size:1.6rem; font-weight:700; color:#1e293b;"><t t-esc="rpmDisplay"/></div>
+                    </div>
+                </div>
+
+                <!-- Timestamp row -->
+                <div style="background:white; border-radius:12px; padding:16px 20px; box-shadow:0 1px 4px rgba(0,0,0,0.08); display:flex; gap:32px; font-size:0.85rem; color:#64748b;">
+                    <div><strong style="color:#374151;">Device timestamp:</strong> <t t-esc="timestampDisplay"/></div>
+                    <div><strong style="color:#374151;">Received at:</strong> <t t-esc="receivedAtDisplay"/></div>
+                    <div t-if="state.latest.buffered">
+                        <span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:8px; font-size:0.75rem; font-weight:600;">BUFFERED</span>
+                    </div>
+                </div>
+            </t>
+        </t>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             TAB: HISTORY
+             ════════════════════════════════════════════════════════════ -->
+        <t t-elif="state.activeTab === 'history'">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                    <h4 style="margin:0 0 16px; color:#1e293b;">Speed Trend (km/h)</h4>
+                    <canvas id="asset-speed-chart" height="200"/>
+                </div>
+                <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                    <h4 style="margin:0 0 16px; color:#1e293b;">Fuel Trend (%)</h4>
+                    <canvas id="asset-fuel-chart" height="200"/>
+                </div>
+            </div>
+            <div style="margin-top:12px; color:#94a3b8; font-size:0.8rem; text-align:center;">
+                Charts show the latest snapshot. Full history requires direct L4 history endpoint integration (Phase 3.5).
+            </div>
+        </t>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             TAB: TIMELINE
+             ════════════════════════════════════════════════════════════ -->
+        <t t-elif="state.activeTab === 'timeline'">
+            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                <h4 style="margin:0 0 16px; color:#1e293b;">Activity Timeline</h4>
+                <t t-if="!state.timeline.length">
+                    <div style="text-align:center; padding:40px; color:#94a3b8;">No timeline events.</div>
+                </t>
+                <div t-else="" style="position:relative;">
+                    <div style="position:absolute; left:16px; top:0; bottom:0; width:2px; background:#e2e8f0;"/>
+                    <t t-foreach="state.timeline" t-as="event" t-key="event_index">
+                        <div style="display:flex; gap:16px; margin-bottom:16px; position:relative;">
+                            <!-- Dot -->
+                            <div t-attf-style="
+                                width:14px; height:14px; border-radius:50%; flex-shrink:0; margin-top:3px;
+                                background: {{event.kind === 'alert' ? '#ef4444' : '#6366f1'}};
+                                border:2px solid white; box-shadow:0 0 0 2px {{event.kind === 'alert' ? '#ef4444' : '#6366f1'}};
+                                position:relative; z-index:1; margin-left:10px;
+                            "/>
+                            <!-- Content -->
+                            <div style="flex:1;">
+                                <div style="display:flex; gap:8px; align-items:baseline; flex-wrap:wrap;">
+                                    <span t-attf-style="
+                                        font-size:0.7rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;
+                                        color: {{event.kind === 'alert' ? '#ef4444' : '#6366f1'}};
+                                    ">
+                                        <t t-esc="event.kind"/>
+                                    </span>
+                                    <span style="font-size:0.75rem; color:#94a3b8;"><t t-esc="fmtDateTime(event.timestamp)"/></span>
+                                </div>
+                                <!-- Telemetry event -->
+                                <t t-if="event.kind === 'telemetry'">
+                                    <div style="font-size:0.85rem; color:#374151; margin-top:2px;">
+                                        Speed <strong><t t-esc="event.speed"/> km/h</strong> ·
+                                        Fuel <strong><t t-esc="event.fuel_level"/>%</strong> ·
+                                        Ignition <strong><t t-esc="event.ignition ? 'ON' : 'OFF'"/></strong>
+                                    </div>
+                                </t>
+                                <!-- Alert event -->
+                                <t t-if="event.kind === 'alert'">
+                                    <div style="display:flex; gap:6px; align-items:center; margin-top:2px; flex-wrap:wrap;">
+                                        <span t-attf-style="{{severityBadgeStyle(event.severity)}}">
+                                            <t t-esc="event.severity"/>
+                                        </span>
+                                        <span style="font-size:0.85rem; color:#374151;"><t t-esc="event.alert_type"/></span>
+                                        <span t-if="event.message" style="font-size:0.8rem; color:#64748b;">— <t t-esc="event.message"/></span>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+            </div>
+        </t>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             TAB: ALERTS
+             ════════════════════════════════════════════════════════════ -->
+        <t t-elif="state.activeTab === 'alerts'">
+            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                <h4 style="margin:0 0 16px; color:#1e293b;">Alert History</h4>
+                <t t-if="!state.alerts.length">
+                    <div style="text-align:center; padding:40px; color:#94a3b8;">No alerts found for this device.</div>
+                </t>
+                <table t-else="" style="width:100%; border-collapse:collapse; font-size:0.875rem;">
+                    <thead>
+                        <tr style="border-bottom:2px solid #e2e8f0;">
+                            <th style="text-align:left; padding:10px 12px; color:#64748b; font-weight:600;">Severity</th>
+                            <th style="text-align:left; padding:10px 12px; color:#64748b; font-weight:600;">Type</th>
+                            <th style="text-align:left; padding:10px 12px; color:#64748b; font-weight:600;">Message</th>
+                            <th style="text-align:left; padding:10px 12px; color:#64748b; font-weight:600;">Timestamp</th>
+                            <th style="text-align:center; padding:10px 12px; color:#64748b; font-weight:600;">Ack</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <t t-foreach="state.alerts" t-as="alert" t-key="alert.id || alert_index">
+                            <tr style="border-bottom:1px solid #f1f5f9;">
+                                <td style="padding:10px 12px;">
+                                    <span t-attf-style="{{severityBadgeStyle(alert.severity)}}">
+                                        <t t-esc="alert.severity"/>
+                                    </span>
+                                </td>
+                                <td style="padding:10px 12px; color:#374151; font-weight:500;"><t t-esc="alert.alert_type"/></td>
+                                <td style="padding:10px 12px; color:#64748b; max-width:320px;"><t t-esc="alert.message || '—'"/></td>
+                                <td style="padding:10px 12px; color:#64748b; white-space:nowrap;"><t t-esc="fmtDateTime(alert.timestamp)"/></td>
+                                <td style="text-align:center; padding:10px 12px;">
+                                    <span t-if="alert.acknowledged"
+                                          style="color:#10b981; font-size:1.1rem;" title="Acknowledged">✓</span>
+                                    <span t-else=""
+                                          style="color:#94a3b8; font-size:1.1rem;" title="Not acknowledged">○</span>
+                                </td>
+                            </tr>
+                        </t>
+                    </tbody>
+                </table>
+            </div>
+        </t>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             TAB: DIAGNOSTICS
+             ════════════════════════════════════════════════════════════ -->
+        <t t-elif="state.activeTab === 'diagnostics'">
+            <t t-if="!state.diagnostics">
+                <div style="text-align:center; padding:60px; color:#94a3b8;">No diagnostics data. Cron may not have run yet.</div>
+            </t>
+            <t t-else="">
+                <!-- Diagnostics KPIs -->
+                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px;">
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">RPM</div>
+                        <div style="font-size:1.6rem; font-weight:700; color:#1e293b;"><t t-esc="diagRpmDisplay"/></div>
+                    </div>
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Engine Load</div>
+                        <div style="font-size:1.6rem; font-weight:700; color:#1e293b;"><t t-esc="diagEngineLoadDisplay"/></div>
+                    </div>
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Fuel Level</div>
+                        <div style="font-size:1.6rem; font-weight:700; color:#1e293b;"><t t-esc="diagFuelDisplay"/></div>
+                    </div>
+                    <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                        <div style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Odometer</div>
+                        <div style="font-size:1.6rem; font-weight:700; color:#1e293b;"><t t-esc="diagOdometerDisplay"/></div>
+                    </div>
+                </div>
+
+                <!-- Meta row -->
+                <div style="background:white; border-radius:12px; padding:16px 20px; box-shadow:0 1px 4px rgba(0,0,0,0.08); margin-bottom:16px; display:flex; gap:24px; flex-wrap:wrap; font-size:0.85rem; color:#64748b;">
+                    <div><strong style="color:#374151;">Contract version:</strong> <t t-esc="diagVersion"/></div>
+                    <div><strong style="color:#374151;">Timestamp:</strong> <t t-esc="diagTimestampDisplay"/></div>
+                    <div t-if="state.diagnostics.buffered">
+                        <span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:8px; font-size:0.75rem; font-weight:600;">BUFFERED</span>
+                    </div>
+                </div>
+
+                <!-- Raw Payload -->
+                <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <h4 style="margin:0; color:#1e293b;">Raw Payload</h4>
+                        <button t-on-click="toggleRawPayload"
+                                style="background:#e2e8f0; color:#374151; border:none; padding:5px 12px; border-radius:6px; cursor:pointer; font-size:0.8rem;">
+                            <t t-esc="state.rawPayloadExpanded ? 'Collapse' : 'Expand'"/>
+                        </button>
+                    </div>
+                    <div t-if="state.rawPayloadExpanded">
+                        <pre style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px; font-size:0.78rem; overflow:auto; max-height:400px; color:#1e293b;">
+                            <t t-esc="formattedRawPayload"/>
+                        </pre>
+                    </div>
+                    <div t-else="" style="color:#94a3b8; font-size:0.85rem;">
+                        Raw payload is hidden. Click Expand to view all FMC003 fields.
+                    </div>
+                </div>
+            </t>
+        </t>
+
+    </t><!-- end t-else main content -->
+
+</div>
+</t>
+</templates>

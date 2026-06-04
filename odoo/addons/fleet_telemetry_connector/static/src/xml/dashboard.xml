@@ -1,101 +1,231 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
 <t t-name="fleet_telemetry_connector.Dashboard">
-<div class="o_fleet_dashboard" style="padding:24px; background:#f8fafc;">
+<div class="o_fleet_dashboard">
 
-    <!-- Header -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
-        <h2 style="margin:0; color:#1e293b; font-size:1.5rem;">Fleet Telemetry Dashboard</h2>
-        <button t-on-click="loadData" style="background:#6366f1; color:white; border:none; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:0.9rem;">
-            ⟳ Refresh
-        </button>
+    <!-- ── Top bar ──────────────────────────────────────────────────────── -->
+    <div class="ftd-topbar">
+        <div class="ftd-topbar-left">
+            <span class="ftd-title">Fleet Operations</span>
+            <span t-if="state.connected" class="ftd-badge ftd-badge--live">
+                <span class="ftd-pulse"/>LIVE
+            </span>
+            <span t-else="" class="ftd-badge ftd-badge--offline">OFFLINE</span>
+        </div>
+        <div class="ftd-topbar-right">
+            <span t-if="state.lastUpdate" class="ftd-last-update">
+                Updated <t t-esc="new Date(state.lastUpdate).toLocaleTimeString()"/>
+            </span>
+        </div>
     </div>
 
-    <!-- Loading -->
+    <!-- ── Loading skeleton ────────────────────────────────────────────── -->
     <t t-if="state.loading">
-        <div style="text-align:center; padding:60px; color:#94a3b8;">Loading telemetry data...</div>
+        <div class="ftd-skeleton-grid">
+            <t t-foreach="[1,2,3,4,5,6]" t-as="i" t-key="i">
+                <div class="ftd-skeleton-card"><div class="ftd-skeleton-line ftd-skeleton-line--short"/><div class="ftd-skeleton-line"/></div>
+            </t>
+        </div>
+        <div class="ftd-skeleton-card ftd-skeleton-card--tall"/>
     </t>
 
     <t t-else="">
-        <!-- KPI Cards -->
-        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px;">
-            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-                <div style="color:#64748b; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Total Vehicles</div>
-                <div style="font-size:2rem; font-weight:700; color:#1e293b; margin-top:4px;"><t t-esc="totalVehicles"/></div>
+
+        <!-- ── KPI strip ──────────────────────────────────────────────── -->
+        <div class="ftd-kpi-grid">
+
+            <div class="ftd-kpi">
+                <div class="ftd-kpi-icon ftd-kpi-icon--indigo">🚛</div>
+                <div class="ftd-kpi-body">
+                    <div class="ftd-kpi-label">Total Vehicles</div>
+                    <div class="ftd-kpi-value"><t t-esc="state.totalVehicles"/></div>
+                </div>
             </div>
-            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-                <div style="color:#64748b; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Active (Ignition On)</div>
-                <div style="font-size:2rem; font-weight:700; color:#10b981; margin-top:4px;"><t t-esc="activeVehicles"/></div>
+
+            <div class="ftd-kpi ftd-kpi--green">
+                <div class="ftd-kpi-icon ftd-kpi-icon--green">🔑</div>
+                <div class="ftd-kpi-body">
+                    <div class="ftd-kpi-label">Ignition On</div>
+                    <div class="ftd-kpi-value ftd-kpi-value--green"><t t-esc="state.ignitionOn"/></div>
+                </div>
             </div>
-            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-                <div style="color:#64748b; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Avg Speed (km/h)</div>
-                <div style="font-size:2rem; font-weight:700; color:#6366f1; margin-top:4px;"><t t-esc="avgSpeed"/></div>
+
+            <div class="ftd-kpi">
+                <div class="ftd-kpi-icon ftd-kpi-icon--blue">➡️</div>
+                <div class="ftd-kpi-body">
+                    <div class="ftd-kpi-label">Moving</div>
+                    <div class="ftd-kpi-value ftd-kpi-value--blue"><t t-esc="state.moving"/></div>
+                </div>
             </div>
-            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-                <div style="color:#64748b; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Avg Fuel (%)</div>
-                <div style="font-size:2rem; font-weight:700; color:#f59e0b; margin-top:4px;"><t t-esc="avgFuel"/></div>
+
+            <div class="ftd-kpi">
+                <div class="ftd-kpi-icon ftd-kpi-icon--purple">⚡</div>
+                <div class="ftd-kpi-body">
+                    <div class="ftd-kpi-label">Avg Speed</div>
+                    <div class="ftd-kpi-value ftd-kpi-value--purple"><t t-esc="state.avgSpeed"/> <span class="ftd-kpi-unit">km/h</span></div>
+                </div>
             </div>
+
+            <div t-attf-class="ftd-kpi {{state.avgFuel != null and state.avgFuel < 20 ? 'ftd-kpi--warn' : ''}}">
+                <div class="ftd-kpi-icon ftd-kpi-icon--amber">⛽</div>
+                <div class="ftd-kpi-body">
+                    <div class="ftd-kpi-label">Avg Fuel</div>
+                    <div t-attf-class="ftd-kpi-value {{state.avgFuel != null and state.avgFuel < 20 ? 'ftd-kpi-value--red' : 'ftd-kpi-value--amber'}}">
+                        <t t-if="state.avgFuel != null"><t t-esc="state.avgFuel"/>%</t>
+                        <t t-else="">—</t>
+                    </div>
+                </div>
+            </div>
+
+            <div t-attf-class="ftd-kpi {{state.stale > 0 ? 'ftd-kpi--warn' : ''}}">
+                <div class="ftd-kpi-icon ftd-kpi-icon--slate">📡</div>
+                <div class="ftd-kpi-body">
+                    <div class="ftd-kpi-label">Stale / Fresh</div>
+                    <div class="ftd-kpi-value">
+                        <span t-attf-class="{{state.stale > 0 ? 'ftd-kpi-value--red' : 'ftd-kpi-value--green'}}"><t t-esc="state.stale"/></span>
+                        <span class="ftd-kpi-sep"> / </span>
+                        <span class="ftd-kpi-value--green"><t t-esc="state.fresh"/></span>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /kpi-grid -->
+
+        <!-- ── Charts + Alerts row ────────────────────────────────────── -->
+        <div class="ftd-row ftd-row--charts">
+
+            <div class="ftd-card ftd-chart-card">
+                <div class="ftd-card-header">Speed per vehicle <span class="ftd-unit">km/h</span></div>
+                <canvas id="speedChart" class="ftd-canvas"/>
+            </div>
+
+            <div class="ftd-card ftd-chart-card">
+                <div class="ftd-card-header">Fuel level <span class="ftd-unit">%</span></div>
+                <canvas id="fuelChart" class="ftd-canvas"/>
+            </div>
+
+            <div class="ftd-card ftd-chart-card ftd-chart-card--sm">
+                <div class="ftd-card-header">Ignition</div>
+                <canvas id="ignChart" class="ftd-canvas"/>
+                <div class="ftd-ign-legend">
+                    <span class="ftd-dot ftd-dot--green"/><span><t t-esc="state.ignitionOn"/> on</span>
+                    <span class="ftd-dot ftd-dot--slate"/><span><t t-esc="state.ignitionOff"/> off</span>
+                </div>
+            </div>
+
         </div>
 
-        <!-- Charts Row -->
-        <div style="display:grid; grid-template-columns:2fr 2fr 1fr; gap:16px; margin-bottom:24px;">
-            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-                <h4 style="margin:0 0 16px; color:#1e293b;">Speed per Vehicle (km/h)</h4>
-                <canvas id="speedChart" height="200"/>
-            </div>
-            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-                <h4 style="margin:0 0 16px; color:#1e293b;">Fuel Level per Vehicle (%)</h4>
-                <canvas id="fuelChart" height="200"/>
-            </div>
-            <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-                <h4 style="margin:0 0 16px; color:#1e293b;">Ignition Status</h4>
-                <canvas id="ignitionChart" height="200"/>
-            </div>
-        </div>
+        <!-- ── Map + Alerts row ───────────────────────────────────────── -->
+        <div class="ftd-row ftd-row--main">
 
-        <!-- Vehicle Table -->
-        <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08); margin-bottom:24px;">
-            <h4 style="margin:0 0 16px; color:#1e293b;">Vehicle Status Overview</h4>
-            <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
-                <thead>
-                    <tr style="border-bottom:2px solid #e2e8f0;">
-                        <th style="text-align:left; padding:10px 12px; color:#64748b;">Device ID</th>
-                        <th style="text-align:center; padding:10px 12px; color:#64748b;">Status</th>
-                        <th style="text-align:center; padding:10px 12px; color:#64748b;">Speed</th>
-                        <th style="text-align:center; padding:10px 12px; color:#64748b;">Fuel</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <t t-foreach="state.vehicles.slice(0,10)" t-as="vehicle" t-key="vehicle.device_id">
-                        <tr style="border-bottom:1px solid #f1f5f9;">
-                            <td style="padding:10px 12px; font-weight:500; color:#1e293b;">
-                                <t t-esc="vehicle.device_id"/>
-                            </td>
-                            <td style="text-align:center; padding:10px 12px;">
-                                <span t-if="vehicle.ignition" style="background:#d1fae5; color:#065f46; padding:3px 10px; border-radius:10px; font-size:0.8rem;">Active</span>
-                                <span t-else="" style="background:#fee2e2; color:#991b1b; padding:3px 10px; border-radius:10px; font-size:0.8rem;">Inactive</span>
-                            </td>
-                            <td style="text-align:center; padding:10px 12px; color:#475569;">
-                                <t t-esc="vehicle.speed"/> km/h
-                            </td>
-                            <td style="text-align:center; padding:10px 12px; color:#475569;">
-                                <t t-esc="vehicle.fuel_level"/>%
-                            </td>
-                        </tr>
+            <!-- Map -->
+            <div class="ftd-card ftd-map-card">
+                <div class="ftd-card-header">Vehicle locations</div>
+                <div id="fleetMap" class="ftd-map"/>
+            </div>
+
+            <!-- Live alert feed -->
+            <div class="ftd-card ftd-alerts-card">
+                <div class="ftd-card-header">
+                    Recent alerts
+                    <span t-if="state.alerts.length" class="ftd-badge ftd-badge--count">
+                        <t t-esc="state.alerts.length"/>
+                    </span>
+                </div>
+                <div class="ftd-alerts-list">
+                    <t t-if="!state.alerts.length">
+                        <div class="ftd-empty">No alerts</div>
                     </t>
-                </tbody>
-            </table>
-            <div t-if="state.vehicles.length > 10" style="text-align:center; padding:10px; color:#94a3b8; font-size:0.85rem;">
-                + <t t-esc="state.vehicles.length - 10"/> more vehicles
+                    <t t-foreach="state.alerts.slice(0,12)" t-as="alert" t-key="alert.id || alert_index">
+                        <div t-attf-class="ftd-alert-row ftd-alert-row--{{alert.severity.toLowerCase()}}">
+                            <div class="ftd-alert-sev"><t t-esc="alert.severity"/></div>
+                            <div class="ftd-alert-body">
+                                <div class="ftd-alert-type"><t t-esc="alert.alert_type"/></div>
+                                <div class="ftd-alert-meta">
+                                    <t t-esc="alert.device_id ? alert.device_id.slice(-8) : ''"/>
+                                    <t t-if="alert.timestamp"> · <t t-esc="new Date(alert.timestamp).toLocaleTimeString()"/></t>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ── Vehicle table ──────────────────────────────────────────── -->
+        <div class="ftd-card ftd-table-card">
+            <div class="ftd-card-header">
+                Fleet status
+                <span class="ftd-table-count"><t t-esc="state.vehicles.length"/> vehicles</span>
+            </div>
+            <div class="ftd-table-wrap">
+                <table class="ftd-table">
+                    <thead>
+                        <tr>
+                            <th>Device</th>
+                            <th>Status</th>
+                            <th>Speed</th>
+                            <th>Fuel</th>
+                            <th>Odometer</th>
+                            <th>Voltage</th>
+                            <th>GSM</th>
+                            <th>Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <t t-foreach="state.vehicles" t-as="v" t-key="v.device_id">
+                            <tr t-attf-class="{{v.stale ? 'ftd-tr--stale' : ''}}">
+                                <td class="ftd-td-id">
+                                    <span class="ftd-device-badge"><t t-esc="v.device_id"/></span>
+                                </td>
+                                <td>
+                                    <span t-if="v.ignition and v.movement" class="ftd-status ftd-status--moving">Moving</span>
+                                    <span t-elif="v.ignition" class="ftd-status ftd-status--idle">Idle</span>
+                                    <span t-else="" class="ftd-status ftd-status--off">Off</span>
+                                </td>
+                                <td class="ftd-td-num">
+                                    <t t-esc="v.speed != null ? v.speed.toFixed(0) + ' km/h' : '—'"/>
+                                </td>
+                                <td>
+                                    <div class="ftd-fuel-bar-wrap">
+                                        <div class="ftd-fuel-bar-bg">
+                                            <div t-attf-class="ftd-fuel-bar-fill {{v.fuel_level != null and v.fuel_level &lt; 15 ? 'ftd-fuel-bar-fill--low' : v.fuel_level != null and v.fuel_level &lt; 30 ? 'ftd-fuel-bar-fill--mid' : 'ftd-fuel-bar-fill--ok'}}"
+                                                 t-attf-style="width:{{v.fuel_level != null ? v.fuel_level : 0}}%"/>
+                                        </div>
+                                        <span class="ftd-fuel-label">
+                                            <t t-esc="v.fuel_level != null ? v.fuel_level.toFixed(1) + '%' : '—'"/>
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="ftd-td-num">
+                                    <t t-esc="v.odometer != null ? (v.odometer/1000).toFixed(0) + ' km' : '—'"/>
+                                </td>
+                                <td class="ftd-td-num">
+                                    <t t-esc="v.ext_voltage != null ? v.ext_voltage.toFixed(1) + ' V' : '—'"/>
+                                </td>
+                                <td>
+                                    <t t-if="v.gsm_signal != null">
+                                        <span class="ftd-signal-bars">
+                                            <t t-foreach="[1,2,3,4,5]" t-as="bar" t-key="bar">
+                                                <span t-attf-class="ftd-bar {{bar &lt;= v.gsm_signal ? 'ftd-bar--active' : ''}}"/>
+                                            </t>
+                                        </span>
+                                    </t>
+                                    <t t-else="">—</t>
+                                </td>
+                                <td class="ftd-td-age">
+                                    <t t-esc="v.age_seconds != null ? (v.age_seconds &lt; 60 ? v.age_seconds + 's' : Math.floor(v.age_seconds/60) + 'm') + ' ago' : '—'"/>
+                                </td>
+                            </tr>
+                        </t>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Map -->
-        <div style="background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-            <h4 style="margin:0 0 16px; color:#1e293b;">Vehicle Locations</h4>
-            <div id="fleetMap" style="height:400px; border-radius:8px;"/>
-        </div>
-    </t>
-</div>
+    </t><!-- /t-else loading -->
+
+</div><!-- /o_fleet_dashboard -->
 </t>
 </templates>

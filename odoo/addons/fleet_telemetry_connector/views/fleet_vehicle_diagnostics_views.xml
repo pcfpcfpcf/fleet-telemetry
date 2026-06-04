@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- Tree view -->
+        <record id="view_fleet_vehicle_diagnostics_tree" model="ir.ui.view">
+            <field name="name">fleet.vehicle.diagnostics.tree</field>
+            <field name="model">fleet.vehicle.diagnostics</field>
+            <field name="arch" type="xml">
+                <tree string="Fleet Vehicle Diagnostics" default_order="timestamp desc">
+                    <field name="device_id"/>
+                    <field name="timestamp"/>
+                    <field name="rpm"/>
+                    <field name="engine_load"/>
+                    <field name="fuel_level"/>
+                    <field name="odometer"/>
+                    <field name="buffered"/>
+                    <field name="contract_version"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- Form view -->
+        <record id="view_fleet_vehicle_diagnostics_form" model="ir.ui.view">
+            <field name="name">fleet.vehicle.diagnostics.form</field>
+            <field name="model">fleet.vehicle.diagnostics</field>
+            <field name="arch" type="xml">
+                <form string="Vehicle Diagnostics">
+                    <sheet>
+                        <group>
+                            <group string="Identity">
+                                <field name="device_id"/>
+                                <field name="contract_version"/>
+                                <field name="buffered"/>
+                            </group>
+                            <group string="Timestamps">
+                                <field name="timestamp"/>
+                                <field name="received_at"/>
+                            </group>
+                        </group>
+                        <group string="Engine &amp; Fuel">
+                            <group>
+                                <field name="rpm"/>
+                                <field name="engine_load"/>
+                            </group>
+                            <group>
+                                <field name="fuel_level"/>
+                                <field name="odometer"/>
+                            </group>
+                        </group>
+                        <notebook>
+                            <page string="Raw Payload">
+                                <field name="raw_payload" nolabel="1" widget="code"/>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Window action -->
+        <record id="action_fleet_vehicle_diagnostics" model="ir.actions.act_window">
+            <field name="name">Diagnostics</field>
+            <field name="res_model">fleet.vehicle.diagnostics</field>
+            <field name="view_mode">tree,form</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    No diagnostics yet. The diagnostics sync cron runs every 5 minutes.
+                </p>
+            </field>
+        </record>
+
+        <!-- Menu item under Fleet Telemetry root -->
+        <menuitem id="menu_fleet_telemetry_diagnostics"
+                  name="Diagnostics"
+                  parent="fleet_telemetry_connector.menu_fleet_telemetry_root"
+                  action="action_fleet_vehicle_diagnostics"
+                  sequence="20"/>
+
+        <!-- Asset Detail client action (registered by asset_detail.js) -->
+        <record id="action_fleet_telemetry_asset_detail" model="ir.actions.client">
+            <field name="name">Asset Detail</field>
+            <field name="tag">fleet_telemetry_asset_detail</field>
+        </record>
+
+        <menuitem id="menu_fleet_telemetry_asset_detail"
+                  name="Asset Detail"
+                  parent="fleet_telemetry_connector.menu_fleet_telemetry_root"
+                  action="action_fleet_telemetry_asset_detail"
+                  sequence="5"/>
+
+    </data>
+</odoo>
