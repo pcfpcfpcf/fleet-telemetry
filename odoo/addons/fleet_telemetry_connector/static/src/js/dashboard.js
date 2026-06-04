@@ -86,11 +86,12 @@ function updateDoughnutChart(chart, data) {
 // Updates move existing markers instead of re-creating them.
 
 class FleetMap {
-    constructor(containerId) {
+    constructor(containerId, onMarkerClick) {
         this._id = containerId;
         this._map = null;
         this._markers = new Map();
         this._initialized = false;
+        this._onMarkerClick = onMarkerClick || null;
     }
 
     init() {
@@ -101,6 +102,11 @@ class FleetMap {
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             attribution: "© OpenStreetMap",
         }).addTo(this._map);
+        // Use marker clustering if the plugin is loaded
+        if (typeof L.markerClusterGroup === "function") {
+            this._cluster = L.markerClusterGroup({ maxClusterRadius: 48, disableClusteringAtZoom: 16 });
+            this._cluster.addTo(this._map);
+        }
         el._leafletMap = this._map;
         this._initialized = true;
     }
@@ -111,10 +117,14 @@ class FleetMap {
             this._map = null;
             this._initialized = false;
             this._markers.clear();
+            this._cluster = null;
             const el = document.getElementById(this._id);
             if (el) el._leafletMap = null;
         }
     }
+
+    // Returns the layer to add markers to (cluster group or map directly)
+    _layer() { return this._cluster || this._map; }
 
     updateVehicles(vehicles) {
         if (!this._map) return;
@@ -130,20 +140,33 @@ class FleetMap {
                 const m = this._markers.get(v.device_id);
                 m.setLatLng([v.lat, v.lng]);
                 m.setStyle({ color, fillColor: color });
+                // Keep latest vehicle data on marker for click handler
+                m._vehicleData = v;
             } else {
                 const m = L.circleMarker([v.lat, v.lng], {
                     radius: 9 * pulse, color, fillColor: color,
                     fillOpacity: 0.85, weight: 2,
-                }).addTo(this._map);
-                m.bindPopup(() => this._popupContent(v));
-                m.on("click", () => m.getPopup().setContent(this._popupContent(v)));
+                });
+                m._vehicleData = v;
+
+                if (this._onMarkerClick) {
+                    // Click opens the vehicle drawer
+                    m.on("click", () => this._onMarkerClick(m._vehicleData));
+                } else {
+                    m.bindPopup(() => this._popupContent(m._vehicleData));
+                    m.on("click", () => m.getPopup().setContent(this._popupContent(m._vehicleData)));
+                }
+                this._layer().addLayer(m);
                 this._markers.set(v.device_id, m);
             }
         }
 
         // Remove markers for devices no longer in view
         for (const [id, marker] of this._markers) {
-            if (!seen.has(id)) { marker.remove(); this._markers.delete(id); }
+            if (!seen.has(id)) {
+                this._layer().removeLayer(marker);
+                this._markers.delete(id);
+            }
         }
 
         // Auto-fit bounds only on first load
@@ -195,10 +218,16 @@ class FleetTelemetryDashboard extends Component {
             avgFuel:       null,
             fresh:         0,
             stale:         0,
+            // Extended KPI fields (from buildLiveSummary extended fields)
+            offlineCount:         0,
+            unacknowledgedAlerts: 0,
             // Per-vehicle list
             vehicles:      [],
             // Recent alerts (pulled separately from Odoo ORM)
             alerts:        [],
+            // Drawer state
+            drawerOpen:    false,
+            drawerVehicle: null,
         });
 
         this._ws          = null;
@@ -207,7 +236,7 @@ class FleetTelemetryDashboard extends Component {
         this._fuelChart   = null;
         this._speedChart  = null;
         this._ignChart    = null;
-        this._fleetMap    = new FleetMap("fleetMap");
+        this._fleetMap    = new FleetMap("fleetMap", (v) => this.openDrawer(v));
 
         onMounted(async () => {
             this._fleetMap.init();
@@ -327,6 +356,9 @@ class FleetTelemetryDashboard extends Component {
         this.state.avgFuel       = data.avg_fuel       ?? null;
         this.state.fresh         = data.fresh          || 0;
         this.state.stale         = data.stale          || 0;
+        // Extended KPI fields
+        this.state.offlineCount         = data.offline_count          ?? 0;
+        this.state.unacknowledgedAlerts = data.unacknowledged_alerts  ?? 0;
 
         if (Array.isArray(data.vehicles)) {
             this.state.vehicles = data.vehicles;
@@ -499,6 +531,51 @@ class FleetTelemetryDashboard extends Component {
         updateBarChart(this._speedChart, labels, speeds, () => "#818cf8");
         updateBarChart(this._fuelChart,  labels, fuels, v => fuelBarColor(v));
         updateDoughnutChart(this._ignChart, [on, off]);
+    }
+
+    // ── Vehicle detail drawer ─────────────────────────────────────────────────
+    // Opens a slide-in panel with full telemetry for the selected vehicle.
+    // Reuses the live-cache vehicle object — no extra fetch needed.
+
+    openDrawer(vehicle) {
+        this.state.drawerVehicle = vehicle;
+        this.state.drawerOpen = true;
+    }
+
+    closeDrawer() {
+        this.state.drawerOpen = false;
+        this.state.drawerVehicle = null;
+    }
+
+    openTableRowDrawer(vehicle) {
+        this.openDrawer(vehicle);
+    }
+
+    // Formatted getters for drawer (delegate to format helpers)
+    drawerFmt(v) {
+        if (!v) return {};
+        return {
+            speed:       fmtSpeed(v.speed),
+            fuel:        fmtFuel(v.fuel_level),
+            ignition:    v.ignition ? "ON" : "OFF",
+            odometer:    fmtOdo(v.odometer),
+            tripOdo:     v.trip_odometer != null ? fmtOdo(v.trip_odometer) : "—",
+            extVoltage:  fmtVolt(v.ext_voltage),
+            batVoltage:  fmtVolt(v.bat_voltage),
+            batLevel:    v.bat_level != null ? `${v.bat_level}%` : "—",
+            gsm:         fmtSig(v.gsm_signal),
+            eco:         fmtEco(v.eco_score),
+            age:         fmtAge(v.age_seconds),
+            lat:         v.lat != null ? Number(v.lat).toFixed(6) : "—",
+            lng:         v.lng != null ? Number(v.lng).toFixed(6) : "—",
+            bearing:     v.bearing != null ? `${Number(v.bearing).toFixed(0)}°` : "—",
+            movement:    v.movement ? "Yes" : "No",
+            buffered:    v.buffered ? "Yes" : "No",
+            stale:       v.stale ? "Yes" : "No",
+            gnssHdop:    v.gnss_hdop != null ? Number(v.gnss_hdop).toFixed(1) : "—",
+            networkType: v.network_type != null ? v.network_type : "—",
+            timestamp:   v.timestamp ? new Date(v.timestamp).toLocaleString() : "—",
+        };
     }
 }
 

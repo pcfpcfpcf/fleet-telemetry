@@ -34,8 +34,11 @@
             "fleet_telemetry_connector/static/src/scss/dashboard.scss",
             # External libs (pinned versions)
             "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
-            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
             "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css",
+            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css",
+            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js",
         ],
     },
     "installable": True,

@@ -19,6 +19,9 @@ import { Component, onMounted, onWillUnmount, useState } from "@odoo/owl";
 // ── Colour palette ─────────────────────────────────────────────────────────────
 const SEVERITY_COLOR = {
     CRITICAL: { bg: "#fee2e2", text: "#991b1b", badge: "#ef4444" },
+    HIGH:     { bg: "#fee2e2", text: "#b91c1c", badge: "#f87171" },
+    MEDIUM:   { bg: "#fef3c7", text: "#92400e", badge: "#f59e0b" },
+    LOW:      { bg: "#ecfdf5", text: "#065f46", badge: "#6ee7b7" },
     WARNING:  { bg: "#fef3c7", text: "#92400e", badge: "#f59e0b" },
     INFO:     { bg: "#dbeafe", text: "#1e40af", badge: "#3b82f6" },
 };
@@ -146,9 +149,9 @@ class AssetDetailPage extends Component {
             "fleet.vehicle.telemetry",
             [["device_id", "=", this.state.deviceId]],
             ["timestamp", "speed", "fuel_level"],
-            { limit: 1 }
+            { limit: 100, order: "timestamp asc" }
         );
-        // Wrap the single snapshot in an array so the chart has at least one point.
+        // Use up to 100 historical records for the trend charts.
         this.state.history = rows;
         requestAnimationFrame(() => requestAnimationFrame(() => this._renderTrendCharts()));
     }

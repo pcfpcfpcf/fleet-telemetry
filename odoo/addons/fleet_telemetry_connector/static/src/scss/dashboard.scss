@@ -110,6 +110,12 @@ $slate:  #64748b; $slate-lt:  #f8fafc;
 
   @media (max-width: 1200px) { grid-template-columns: repeat(3, 1fr); }
   @media (max-width: 700px)  { grid-template-columns: repeat(2, 1fr); }
+
+  &--8 {
+    grid-template-columns: repeat(8, 1fr);
+    @media (max-width: 1400px) { grid-template-columns: repeat(4, 1fr); }
+    @media (max-width: 900px)  { grid-template-columns: repeat(2, 1fr); }
+  }
 }
 
 .ftd-kpi {
@@ -226,9 +232,13 @@ $slate:  #64748b; $slate-lt:  #f8fafc;
   font-size: 12px;
   transition: background .15s;
 
-  &--critical { background: $red-lt;   border-color: $red;   }
-  &--warning  { background: $amber-lt; border-color: $amber; }
-  &--info     { background: $blue-lt;  border-color: $blue;  }
+  // Backend severity enum: CRITICAL HIGH MEDIUM LOW WARNING INFO
+  &--critical { background: $red-lt;    border-color: $red;    }
+  &--high     { background: $red-lt;    border-color: darken($red, 8%); }
+  &--medium   { background: $amber-lt;  border-color: $amber;  }
+  &--low      { background: #ecfdf5;    border-color: #6ee7b7; }
+  &--warning  { background: $amber-lt;  border-color: $amber;  }
+  &--info     { background: $blue-lt;   border-color: $blue;   }
 }
 
 .ftd-alert-sev {
@@ -402,4 +412,135 @@ $slate:  #64748b; $slate-lt:  #f8fafc;
   animation: ftd-shimmer 1.4s infinite;
   margin-bottom: 10px;
   &--short { width: 50%; margin-bottom: 16px; height: 8px; }
+}
+
+// ── Clickable table row ───────────────────────────────────────────────────────
+.ftd-tr--clickable {
+  cursor: pointer;
+  &:hover { background: #eff6ff !important; }
+}
+
+// ── Map hint label ────────────────────────────────────────────────────────────
+.ftd-map-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: $text-3;
+  margin-left: 8px;
+}
+
+// ── Vehicle detail drawer ─────────────────────────────────────────────────────
+.ftd-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 1040;
+  animation: ftd-fade-in 0.15s ease;
+}
+
+.ftd-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 420px;
+  max-width: 92vw;
+  height: 100vh;
+  background: $surface;
+  box-shadow: -4px 0 24px rgba(0,0,0,.12);
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  animation: ftd-slide-in 0.2s ease;
+  overflow: hidden;
+}
+
+@keyframes ftd-fade-in  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ftd-slide-in { from { transform: translateX(100%) } to { transform: translateX(0) } }
+
+.ftd-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid $border;
+  background: $slate-lt;
+  flex-shrink: 0;
+}
+
+.ftd-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ftd-device-badge--lg {
+  font-size: 13px;
+  padding: 3px 10px;
+}
+
+.ftd-drawer-close {
+  border: none;
+  background: none;
+  font-size: 18px;
+  color: $text-3;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  line-height: 1;
+  flex-shrink: 0;
+  &:hover { background: $border; color: $text-1; }
+}
+
+.ftd-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 32px;
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: $border; border-radius: 4px; }
+}
+
+.ftd-drawer-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: $text-3;
+  margin: 20px 0 10px;
+  &:first-child { margin-top: 4px; }
+}
+
+.ftd-drawer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ftd-drawer-cell {
+  background: $slate-lt;
+  border: 1px solid $border;
+  border-radius: $radius-sm;
+  padding: 10px 12px;
+}
+
+.ftd-drawer-cell-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: $text-3;
+  margin-bottom: 4px;
+}
+
+.ftd-drawer-cell-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: $text-1;
+  line-height: 1.2;
+
+  &--accent { color: $indigo; }
+  &--green  { color: $green; }
+  &--red    { color: $red; }
+  &--amber  { color: $amber; }
+  &--mono   { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; }
 }
