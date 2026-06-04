@@ -24,7 +24,7 @@
     "assets": {
         "web.assets_backend": [
             # L4 connection config — must load before dashboard.js
-            "/fleet_telemetry/config.js",
+            "fleet_telemetry_connector/static/src/js/fleet_config.js",
             # Owl components
             "fleet_telemetry_connector/static/src/xml/dashboard.xml",
             "fleet_telemetry_connector/static/src/js/dashboard.js",
