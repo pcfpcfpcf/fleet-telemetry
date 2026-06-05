@@ -23,7 +23,14 @@
     ],
     "assets": {
         "web.assets_backend": [
-            # L4 connection config — must load before dashboard.js
+            # External libs MUST load before dashboard.js so L and Chart are defined
+            "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css",
+            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css",
+            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js",
+            # L4 connection config
             "fleet_telemetry_connector/static/src/js/fleet_config.js",
             # Owl components
             "fleet_telemetry_connector/static/src/xml/dashboard.xml",
@@ -32,13 +39,6 @@
             "fleet_telemetry_connector/static/src/js/asset_detail.js",
             # Styles
             "fleet_telemetry_connector/static/src/scss/dashboard.scss",
-            # External libs (pinned versions)
-            "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
-            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
-            "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
-            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css",
-            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css",
-            "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js",
         ],
     },
     "installable": True,
