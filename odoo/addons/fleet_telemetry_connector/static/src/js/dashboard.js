@@ -23,15 +23,20 @@ class FleetTelemetryDashboard extends Component {
             // _leafletMap reference from the previous mount so renderMap()
             // sees it as "already initialized" and skips tile layer setup.
             this._destroyMap();
-
             await this.loadData();
             this._refreshInterval = setInterval(() => this.loadData(), 30000);
+            this._connectWebSocket();
         });
 
         onWillUnmount(() => {
             clearInterval(this._refreshInterval);
+            clearTimeout(this._wsReconnectTimer);
             this._destroyCharts();
             this._destroyMap();
+            if (this._ws) {
+                this._ws.close();
+                this._ws = null;
+            }
         });
     }
 
@@ -43,6 +48,47 @@ class FleetTelemetryDashboard extends Component {
             const existing = Chart.getChart(canvas);
             if (existing) existing.destroy();
         });
+    }
+     _connectWebSocket() {
+        const wsUrl = `ws://${window.location.hostname}:3001`;
+        const ws = new WebSocket(wsUrl);
+        this._ws = ws;
+
+        ws.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.type !== 'telemetry' || !msg.event) return;
+                const ev = msg.event;
+                const incoming = {
+                    device_id: ev.device_id,
+                    latitude: ev.position?.lat ?? 0,
+                    longitude: ev.position?.lng ?? 0,
+                    speed: ev.position?.speed ?? 0,
+                    fuel_level: ev.telemetry?.fuel_level ?? 0,
+                    ignition: ev.telemetry?.ignition ?? false,
+                    timestamp: ev.timestamp,
+                };
+                const vehicles = [...this.state.vehicles];
+                const idx = vehicles.findIndex(v => v.device_id === incoming.device_id);
+                if (idx >= 0) {
+                    vehicles[idx] = { ...vehicles[idx], ...incoming };
+                } else {
+                    vehicles.push(incoming);
+                }
+                this.state.vehicles = vehicles;
+                clearTimeout(this._chartRenderTimer);
+                this._chartRenderTimer = setTimeout(() => {
+                    requestAnimationFrame(() => requestAnimationFrame(() => this.renderCharts()));
+                }, 500);
+            } catch {}
+        };
+
+        ws.onclose = () => {
+            this._ws = null;
+            this._wsReconnectTimer = setTimeout(() => this._connectWebSocket(), 5000);
+        };
+
+        ws.onerror = () => ws.close();
     }
 
     _destroyMap() {

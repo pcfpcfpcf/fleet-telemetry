@@ -1,0 +1,297 @@
+Fleet Telemetry Platform
+Technical Architecture Document
+Version  Draft
+Client  Mobily Fleet Operations
+Date  March 2026
+Prepared By Mohamed Ilyes Arfaoui
+Role
+Name
+Responsibility
+Systems Architect
+—
+Technical lead, architecture design, API contracts
+Software Engineer
+—
+Ingestion library, pipeline, Odoo module
+Security Engineer (Red)
+—
+Penetration testing, threat modeling, audit, vulnerability research
+Security Engineer (Blue)
+—
+Transport controls, network segmentation, cert rotation, remediation, incident response
+Embedded Systems Engineer
+—
+Firmware, device config, hardware eval
+Cloud Engineer
+—
+Infrastructure, deployment, scaling
+Full System Architecture
+1. System Overview
+The platform is a closed-network, five-layer telemetry system connecting Teltonika vehicle devices to a native Odoo Fleet module. Each layer has a single owner, a defined interface, and no knowledge of the layers above or below its own interface contract. Phase 1 (prototype) uses the FMC003. Production deployment will use the FMC650 with the All-CAN300 CAN data adapter.
+Layer
+Name
+Responsibility
+Owner
+L1
+Device
+FMC003 firmware, telemetry capture, offline buffer (Phase 1); FMC650 + All-CAN300 (production)
+Embedded Engineer
+L2
+Transport
+Custom TCP server + TLS 1.3, mTLS device auth, internal network
+Security Engineer (Blue)
+L3
+Ingestion
+Custom C ingestion library, codec 8/8E/16 decoder, device session management, NATS JetStream, event normalization
+Software Engineer + Systems Architect
+L4
+Processing
+Business logic, alerting, TimescaleDB, REST API
+Software Engineer + Systems Architect
+L5
+Presentation
+Odoo Fleet module, WebSocket push, read-only views
+Software Engineer + Cloud
+Fleet size: 20,000 vehicles. Estimated message volume at 30-second reporting interval: 40,000 messages/minute at steady state, ~667 msg/sec peak.
+2. Stack & Technology Choices
+2.1 Device — Teltonika FMC003 (Phase 1) / FMC650 + All-CAN300 (Production)
+The FMC003 is a GNSS/GSM tracker supporting the Teltonika codec 8/8E/16 protocol over TCP. It is used for the Phase 1 prototype deployment. Key capabilities used in this platform:
+GNSS positioning  GPS, GLONASS, BEIDOU — lat/lng, altitude, accuracy radius
+CAN bus reader  speed, RPM, fuel level, engine load, odometer via OBD-II/CAN
+I/O events  ignition on/off, door sensors, driver ID via iButton
+Records on Stop (RoS)  onboard flash buffer — stores records during signal loss, flushes on reconnect. Configured via Teltonika Configurator, no custom firmware required.
+Production device (Phase 2+): Teltonika FMC650 + All-CAN300
+The FMC650 replaces the FMC003 for production. It supports CAN-FD and provides a dedicated CANbus interface, removing the dependency on OBD-II adapters for deep vehicle data. The All-CAN300 CAN data adapter connects inline on the vehicle CANbus, exposing full FMS/CAN-FD telemetry — fuel consumption, engine hours, axle load, and driver behaviour events — beyond the OBD-II subset available on the FMC003. Codec compatibility (8/8E/16) and the Teltonika Configurator provisioning workflow are preserved across both devices; no changes to the L2–L5 stack are required for the transition.
+2.2 Transport — Custom TCP Server + TLS
+The transport layer is a purpose-built TCP server with TLS 1.3 termination and mTLS device authentication. The FMC003 and FMC650 connect directly over raw TCP using the Teltonika binary codec — no MQTT broker is involved. The server is implemented as an async I/O daemon capable of maintaining 20,000 persistent connections on a single EC2 instance.
+Protocol  Raw binary TCP over port 8883, TLS-wrapped
+TLS version  1.3 minimum enforced at server level. No TLS 1.2 fallback.
+Device auth  Mutual TLS (mTLS) — unique client certificate per device (FMC003 or FMC650) provisioned at device configuration time
+Connection handling  Per-connection IMEI handshake on connect. Persistent TCP session for the device lifetime. Heartbeat timeout and dead-connection reaping handled by the server.
+2.3 Ingestion — Custom C Library + NATS JetStream
+We will be implementing a custom, single purpose-built C library. The library accepts decoded payloads directly from the TCP ingestion server, decodes the Teltonika binary payload in-process, manages device session state, normalizes to the event schema, and publishes to NATS JetStream — all in one process with no intermediate hop.
+The library is structured as four modules: TCP connection handler (raw socket ingestion, TLS handshake, IMEI session binding), codec 8/8E/16 decoder (pure bit manipulation, covers AVL IDs, extended IO, buffered record framing), device session manager (online/offline state per IMEI, last-seen timestamp, reconnect handling), and NATS publisher (nats.c client). Total estimated size: 1,500–2,500 lines. Deployed as a single statically-linked binary in a minimal container.
+NATS JetStream is chosen over heavier brokers (Kafka, RabbitMQ) based on fleet scale. At 667 msg/sec, a single NATS server handles the load with significant headroom. JetStream persistence provides durable delivery without a cluster.
+Subject structure  
+telemetry.raw.{device_id} — one subject per device
+telemetry.events.{type} — typed event streams (ignition, geofence, alert)
+Retention  24-hour sliding window on raw stream. Processed data persists in TimescaleDB.
+Consumer  L4 processing service subscribes as a push consumer with ack-based delivery
+2.4 Processing — PostgreSQL + TimescaleDB
+L4 is a Node.js service that consumes from NATS, applies business logic, writes to the database, and exposes a REST API to L5.
+Database  PostgreSQL 16 with TimescaleDB extension — telemetry data stored as a hypertable partitioned by time and device_id
+Retention policy  Raw telemetry: 90 days. Aggregated hourly summaries: 2 years.
+Alerting  Rule engine evaluated per-event — speed threshold, geofence breach, ignition anomaly. Alerts written to a separate table and pushed via WebSocket.
+REST API  Internal only. Consumed by Odoo module. JSON over HTTP/HTTPS. No public endpoint.
+2.5 Presentation — Odoo Fleet Module
+A native Odoo 17 module extending the Fleet app. No separate frontend. Data is pulled via REST API from L4 and pushed in real time via WebSocket for live map updates.
+Views  Fleet list with last-known position, speed, fuel. Per-vehicle telemetry timeline. Alert inbox.
+Real-time  WebSocket connection from Odoo client to L4 — pushes position updates every 30 seconds per active vehicle on screen.
+Access control  Odoo native groups — Fleet Manager, Fleet User, Read-Only. No telemetry data exposed outside Odoo roles.
+3. Data Flow & Event Schema
+3.1 End-to-End Flow
+1. The vehicle device (FMC003 in Phase 1; FMC650 + All-CAN300 in production) captures a telemetry record every 30 seconds (configurable) and transmits over TCP to the ingestion server using the Teltonika binary codec.
+2. The TCP ingestion server authenticates the device via mTLS, validates the IMEI on the initial handshake, and passes the raw binary payload directly to the C ingestion library in-process.
+3. The C ingestion library receives the raw payload, decodes the Teltonika binary codec 8/8E/16 in-process, and updates device session state.
+4. The library normalizes the decoded fields to the event schema and publishes directly to NATS JetStream on the device subject.
+5.  The L4 processing service consumes the NATS message, evaluates alert rules, writes to TimescaleDB, and acknowledges the message.
+6.  Odoo polls the REST API on page load and maintains a WebSocket connection for live updates.
+3.2 Normalized Event Schema
+All events entering NATS conform to this schema. This is the contract between L3 and L4 — C library internals do not leak past this boundary.
+{
+  "event_id":    "uuid-v4",
+  "device_id":   "string  — Teltonika IMEI",
+  "timestamp":   "ISO 8601 UTC",
+  "received_at": "ISO 8601 UTC  — broker ingestion time",
+  "position": {
+    "lat":        "float",
+    "lng":        "float",
+    "altitude":   "float  — metres",
+    "accuracy":   "float  — metres",
+    "bearing":    "float  — degrees",
+    "speed":      "float  — km/h"
+  },
+  "telemetry": {
+    "ignition":   "boolean",
+    "fuel_level": "float  — percentage, null if not available",
+    "odometer":   "float  — km",
+    "rpm":        "integer, null if not available",
+    "engine_load":"float  — percentage, null if not available"
+  },
+  "io_events":   "array  — raw I/O channel changes",
+  "buffered":    "boolean  — true if record was stored offline"
+}
+3.3 Offline Buffer Behaviour
+buffered: true flags any record that was stored on the device during a connectivity gap and flushed after reconnect. L4 processes these records in order by timestamp, not received_at, so historical gaps are backfilled correctly in TimescaleDB.
+3.4 TimescaleDB Schema
+Core hypertable — partitioned by timestamp, indexed on device_id.
+CREATE TABLE telemetry (
+  event_id    UUID        PRIMARY KEY,
+  device_id   TEXT        NOT NULL,
+  timestamp   TIMESTAMPTZ NOT NULL,
+  lat         DOUBLE PRECISION,
+  lng         DOUBLE PRECISION,
+  speed       FLOAT,
+  fuel_level  FLOAT,
+  odometer    FLOAT,
+  ignition    BOOLEAN,
+  buffered    BOOLEAN     DEFAULT FALSE,
+  payload     JSONB
+);
+SELECT create_hypertable('telemetry', 'timestamp');
+CREATE INDEX ON telemetry (device_id, timestamp DESC);
+4. Security Specification
+4.1 Threat Model
+The system operates entirely on an internal network. There are no public-facing endpoints. The threat surface is:
+Compromised device  A stolen or cloned device (FMC003 or FMC650) attempting to inject false telemetry
+Internal network breach  Lateral movement from a compromised host reaching broker or database
+Privilege escalation  An Odoo user accessing telemetry outside their role scope
+Data exfiltration  Bulk extraction of historical telemetry records
+4.2 Controls by Layer
+Layer
+Control
+Implementation
+L1 — Device
+Device identity
+Unique mTLS certificate per IMEI. Certificates provisioned at configuration time via Teltonika Configurator. No shared credentials.
+L2 — Transport
+Encryption in transit
+TLS 1.3 enforced at server level. Cipher suite: TLS_AES_256_GCM_SHA384 minimum. No TLS 1.2 fallback.
+L2 — Transport
+Certificate rotation
+12-month cert lifetime. Rotation via server-initiated disconnect — device reconnects with new cert.
+L3 — Ingestion
+Network isolation
+The C ingestion library and NATS run on an isolated subnet. The TCP ingestion server is the only host with inbound connectivity from devices.
+L4 — Processing
+Encryption at rest
+TimescaleDB volume encrypted with AES-256. Managed at infrastructure level.
+L4 — Processing
+API auth
+Internal REST API uses short-lived JWT tokens issued to Odoo module only. No external token issuance.
+L4 — Processing
+Audit log
+Immutable append-only table logs all data reads, writes, and admin actions with actor, timestamp, and payload hash.
+L5 — Presentation
+Access control
+Odoo native groups enforce role-scoped access. Fleet Manager: full read. Fleet User: own-vehicle only. Read-Only: no alert data.
+L5 — Presentation
+Session security
+Odoo session tokens, standard timeout policy. No telemetry data cached client-side.
+4.3 Network Segmentation
+Four network segments, no cross-segment communication except where explicitly listed:
+Device network  FMC003/FMC650 devices — outbound TCP/8883 to ingestion server only
+Ingestion subnet  TCP ingestion server, C ingestion library, NATS — isolated, no public routes
+Processing subnet  L4 service, TimescaleDB — reachable from ingestion subnet (NATS consumer) and presentation subnet (REST API)
+Presentation subnet  Odoo server — outbound to L4 REST API and WebSocket only
+4.4 Penetration Testing
+Scheduled at the end of Phase 3. Scope: TCP server TLS/mTLS bypass, NATS subject enumeration, L4 API token forgery, Odoo privilege escalation. Report delivered before Phase 4 handoff.
+5. Infrastructure & Deployment
+5.1 Topology
+All components run on private infrastructure. The cloud provider is AWS. All compute runs on EC2 within a private VPC. No managed services with external data residency are used.
+Component
+Spec (Phase 1)
+Scaling trigger
+TCP ingestion server
+2 vCPU / 4 GB RAM — single node
+> 50k concurrent connections
+C ingestion library
+1 vCPU / 2 GB RAM — EC2 t3.small
+CPU > 60% sustained or decode lag > 100ms p99
+NATS JetStream
+2 vCPU / 4 GB RAM — single node
+> 5k msg/sec sustained
+L4 processing
+4 vCPU / 8 GB RAM — single instance
+Latency p99 > 500ms
+TimescaleDB
+8 vCPU / 32 GB RAM — single node
+Disk > 70% or query p99 > 2st
+Odoo server
+4 vCPU / 16 GB RAM
+Worker saturation
+Monitoring (Prometheus + Grafana)
+2 vCPU / 4 GB RAM — EC2 t3.medium
+Scrape interval > 60s or Grafana OOM
+5.2 Infrastructure as Code
+All infrastructure defined in Terraform. No manual provisioning. Modules:
+network/  VPC, subnets, security groups, routing tables
+compute/  VM instances, autoscaling groups
+database/  TimescaleDB instance, backup schedule, encryption config
+messaging/  NATS JetStream config, stream definitions, retention policies
+tls/  Certificate authority config, device cert templates
+5.3 CI/CD
+GitHub Actions pipeline per service. Stages: lint → unit test → build container → push to private registry → deploy to staging → integration test → promote to production. No manual deploy steps after Phase 1.
+5.4 Backup & Recovery
+Component
+Backup method
+RPO
+RTO
+TimescaleDB
+Daily snapshot + WAL streaming to object storage
+1 hour
+2 hours
+NATS JetStream
+JetStream mirror stream on secondary node
+0
+< 1 min
+Odoo
+Daily database snapshot
+24 hours
+4 hours
+Config / IaC
+Git — all config in version control
+0
+< 30 min
+5.5 Observability
+Metrics  Prometheus scraping all services. Grafana dashboards: message throughput, processing latency, DB query time, NATS consumer lag.
+Logs  Structured JSON logs from all services. Aggregated to a central log store. Retention: 30 days.
+Alerts  PagerDuty integration for: NATS consumer lag > 10k messages, TimescaleDB replication lag > 60s, L4 error rate > 1%, TLS handshake failures > 50/min.
+Appendix A — Open Decisions
+Decision
+Options
+Owner
+Due
+Cloud provider
+Resolved: AWS
+Cloud Engineer
+Phase 1
+MQTT broker selection
+Resolved: Custom TCP server
+Security Engineer (Blue)
+Phase 1
+Device cert CA
+Self-hosted CA vs managed PKI
+Security Engineer (Blue)
+Phase 1
+Odoo version
+17 Community vs Enterprise
+Systems Architect
+Phase 1
+Phase 4 device
+Resolved: FMC650 + All-CAN300
+Embedded Engineer
+Phase 3
+Appendix B — Glossary
+Term
+Definition
+CAN bus
+Controller Area Network — vehicle diagnostic protocol providing speed, fuel, RPM from ECU
+FMC003
+Teltonika GNSS tracker used in Phase 1 prototype deployment. Supports codec 8/8E/16 over TCP, OBD-II/CAN via iButton, and Records on Stop offline buffering.
+FMC650
+Teltonika GNSS tracker used in production deployment. Supports CAN-FD and a dedicated CANbus interface. Codec-compatible with FMC003; no changes to L2–L5 stack required.
+All-CAN300
+Teltonika CAN data adapter used with the FMC650 in production. Connects inline on the vehicle CANbus to expose FMS/CAN-FD telemetry including fuel consumption, engine hours, axle load, and driver behaviour events.
+Hypertable
+TimescaleDB table partitioned automatically by time for efficient time-series queries
+JetStream
+NATS persistence layer providing durable, ordered message delivery with ack semantics
+mTLS
+Mutual TLS — both client and server authenticate with certificates
+NATS
+Lightweight open-source messaging system; JetStream is its persistence/streaming layer
+RoS
+Records on Stop — Teltonika firmware feature that buffers telemetry during connectivity loss
+C ingestion library
+Purpose-built C library handling L3 ingestion. Accepts raw payloads from the TCP ingestion server in-process, decodes Teltonika codec 8/8E/16 binary, manages device session state (online/offline per IMEI), normalizes to the event schema, and publishes to NATS JetStream via nats.c.
