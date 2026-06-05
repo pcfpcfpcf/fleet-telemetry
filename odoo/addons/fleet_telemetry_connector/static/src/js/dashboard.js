@@ -626,6 +626,7 @@ class FleetTelemetryDashboard extends Component {
     fmtFuel(v)   { return fmtFuel(v); }
     fmtVolt(v)   { return fmtVolt(v); }
     fmtAge(v)    { return fmtAge(v); }
+    fmtAlertType(t) { return t ? String(t).replace(/_/g, ' ') : ''; }
 
     // Formatted getters for drawer (delegate to format helpers)
     drawerFmt(v) {

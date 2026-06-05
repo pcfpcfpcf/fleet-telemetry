@@ -208,7 +208,7 @@
                   <t t-else="">ℹ️</t>
                 </div>
                 <div class="ftd-alert-content">
-                  <div class="ftd-alert-type"><t t-esc="(alert.alert_type || '').replace(/_/g, ' ')"/></div>
+                  <div class="ftd-alert-type"><t t-esc="fmtAlertType(alert.alert_type)"/></div>
                   <div class="ftd-alert-meta">
                     <t t-esc="alert.device_id ? alert.device_id.slice(-8) : '—'"/>
                     <t t-if="alert.timestamp"> · <t t-esc="new Date(alert.timestamp).toLocaleTimeString()"/></t>
