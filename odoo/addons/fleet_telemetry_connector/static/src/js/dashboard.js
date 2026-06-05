@@ -625,6 +625,7 @@ class FleetTelemetryDashboard extends Component {
     }
 
     // Expose format helpers to OWL template
+    fmtSpeed(v)  { return fmtSpeed(v); }
     fmtOdo(v)    { return fmtOdo(v); }
     fmtFuel(v)   { return fmtFuel(v); }
     fmtVolt(v)   { return fmtVolt(v); }
