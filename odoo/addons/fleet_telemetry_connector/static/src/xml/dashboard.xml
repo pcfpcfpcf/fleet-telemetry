@@ -296,7 +296,7 @@
                   t-on-click="() => openTableRowDrawer(v)">
                 <td class="ftd-td-id">
                   <span class="ftd-device-badge">
-                    <span class="ftd-dot ftd-dot--green" t-if="v.ignition and not v.stale"/>
+                    <span class="ftd-dot ftd-dot--green" t-if="v.ignition and !v.stale"/>
                     <span class="ftd-dot ftd-dot--amber" t-elif="v.ignition and v.stale"/>
                     <span class="ftd-dot ftd-dot--muted" t-else=""/>
                     <t t-esc="v.device_id"/>
