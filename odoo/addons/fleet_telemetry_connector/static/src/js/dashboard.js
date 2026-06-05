@@ -83,8 +83,16 @@ class FleetTelemetryDashboard extends Component {
             } catch {}
         };
 
+        ws.onopen = () => {
+            clearInterval(this._refreshInterval);
+            this._refreshInterval = null;
+        };
+
         ws.onclose = () => {
             this._ws = null;
+            if (!this._refreshInterval) {
+                this._refreshInterval = setInterval(() => this.loadData(), 30000);
+            }
             this._wsReconnectTimer = setTimeout(() => this._connectWebSocket(), 5000);
         };
 
