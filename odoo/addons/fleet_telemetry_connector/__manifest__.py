@@ -25,4 +25,5 @@
     },
     "installable": True,
     "application": True,
+    "post_init_hook": "_start_telemetry_poller",
 }
