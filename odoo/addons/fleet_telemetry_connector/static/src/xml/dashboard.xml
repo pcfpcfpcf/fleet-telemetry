@@ -22,7 +22,7 @@
 
     <div class="ftd-topbar-right">
       <span t-if="state.lastUpdate" class="ftd-last-update">
-        Updated <t t-esc="new Date(state.lastUpdate).toLocaleTimeString()"/>
+        Updated <t t-esc="fmtTimestamp(state.lastUpdate)"/>
       </span>
     </div>
   </div>
@@ -171,7 +171,7 @@
           <span class="ftd-map-badge"><t t-esc="state.vehicles.length"/> vehicles</span>
           <span class="ftd-map-hint">Click a marker to view details</span>
         </div>
-        <div id="fleetMap" style="width:100%;height:440px;min-height:440px;display:block;background:#0b1628;"/>
+        <div id="fleetMap" style="width:100%;height:350px;min-height:350px;display:block;background:#0b1628;"/>
         <div class="ftd-map-legend">
           <span><span class="ftd-map-legend-dot ftd-map-legend-dot--online"/>Online</span>
           <span><span class="ftd-map-legend-dot ftd-map-legend-dot--moving"/>Moving</span>
@@ -211,7 +211,7 @@
                   <div class="ftd-alert-type"><t t-esc="fmtAlertType(alert.alert_type)"/></div>
                   <div class="ftd-alert-meta">
                     <t t-esc="alert.device_id ? alert.device_id.slice(-8) : '—'"/>
-                    <t t-if="alert.timestamp"> · <t t-esc="new Date(alert.timestamp).toLocaleTimeString()"/></t>
+                    <t t-if="alert.timestamp"> · <t t-esc="fmtTimestamp(alert.timestamp)"/></t>
                   </div>
                 </div>
                 <div class="ftd-alert-sev-badge"><t t-esc="alert.severity || 'INFO'"/></div>
@@ -236,7 +236,7 @@
                   <div class="ftd-trip-driver"><t t-esc="fmtSpeed(tv.speed)"/> · ignition ON</div>
                 </div>
                 <div class="ftd-trip-stats">
-                  <div class="ftd-trip-duration"><t t-esc="tv.age_seconds != null ? Math.floor(tv.age_seconds / 60) + 'm' : '—'"/></div>
+                  <div class="ftd-trip-duration"><t t-esc="tv.age_seconds != null ? fmtAgeMin(tv.age_seconds) : '—'"/></div>
                   <div class="ftd-trip-distance"><t t-esc="fmtOdo(tv.trip_odometer)"/></div>
                 </div>
               </div>
@@ -344,7 +344,7 @@
                   <t t-else="">—</t>
                 </td>
                 <td class="ftd-td-age">
-                  <t t-esc="v.age_seconds != null ? (v.age_seconds &lt; 60 ? v.age_seconds + 's' : Math.floor(v.age_seconds / 60) + 'm') + ' ago' : '—'"/>
+                  <t t-esc="fmtAgeRow(v.age_seconds)"/>
                 </td>
               </tr>
             </t>
@@ -498,6 +498,94 @@
         </div>
       </div>
     </t>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         LIVE DIAGNOSTICS PANEL — D: Real device validation
+         Raw WebSocket data. No ORM. No aggregation. No computed KPIs.
+         ════════════════════════════════════════════════════════════════ -->
+    <div class="ftd-diag-card">
+      <div class="ftd-diag-header">
+        <span class="ftd-diag-title">⚙ Live Device Diagnostics</span>
+        <span class="ftd-diag-subtitle">Raw WebSocket · validation only · not production UI</span>
+      </div>
+      <t t-if="Object.keys(state.diagVehicles).length === 0">
+        <div class="ftd-diag-empty">Waiting for telemetry… connect FMC003 to port 18883</div>
+      </t>
+      <t t-else="">
+        <div class="ftd-diag-table-wrap">
+          <table class="ftd-diag-table">
+            <thead>
+              <tr>
+                <th>IMEI / Device</th>
+                <th>Last Packet</th>
+                <th>Latitude</th>
+                <th>Longitude</th>
+                <th>Speed</th>
+                <th>Ignition</th>
+                <th>Ext Voltage</th>
+                <th>GSM</th>
+                <th>Movement</th>
+              </tr>
+            </thead>
+            <tbody>
+              <t t-foreach="diagEntries()" t-as="entry" t-key="entry[0]">
+                <t t-set="dv"  t-value="entry[1]"/>
+                <t t-set="dpos" t-value="dv.position || {}"/>
+                <t t-set="dtel" t-value="dv.telemetry || {}"/>
+                <t t-set="dlat" t-value="dpos.lat != null ? dpos.lat : (dv.lat != null ? dv.lat : null)"/>
+                <t t-set="dlng" t-value="dpos.lng != null ? dpos.lng : (dv.lng != null ? dv.lng : null)"/>
+                <t t-set="dspd" t-value="dpos.speed != null ? dpos.speed : (dv.speed != null ? dv.speed : null)"/>
+                <t t-set="dign" t-value="dtel.ignition != null ? dtel.ignition : (dv.ignition != null ? dv.ignition : null)"/>
+                <tr>
+                  <td class="ftd-diag-id"><t t-esc="entry[0]"/></td>
+                  <td class="ftd-diag-age"><t t-esc="diagAge(dv.timestamp || dv.received_at)"/></td>
+                  <td>
+                    <t t-if="isValidCoordVal(dlat)">
+                      <span class="ftd-diag-val"><t t-esc="fmtCoord(dlat)"/></span>
+                    </t>
+                    <t t-else=""><span class="ftd-diag-null">no fix</span></t>
+                  </td>
+                  <td>
+                    <t t-if="isValidCoordVal(dlng)">
+                      <span class="ftd-diag-val"><t t-esc="fmtCoord(dlng)"/></span>
+                    </t>
+                    <t t-else=""><span class="ftd-diag-null">no fix</span></t>
+                  </td>
+                  <td>
+                    <t t-if="dspd != null">
+                      <span class="ftd-diag-val"><t t-esc="fmtNum(dspd, 0)"/> km/h</span>
+                    </t>
+                    <t t-else=""><span class="ftd-diag-null">—</span></t>
+                  </td>
+                  <td>
+                    <t t-if="dign === true"><span class="ftd-diag-on">ON</span></t>
+                    <t t-elif="dign === false"><span class="ftd-diag-off">OFF</span></t>
+                    <t t-else=""><span class="ftd-diag-null">—</span></t>
+                  </td>
+                  <td>
+                    <t t-if="dv.ext_voltage != null">
+                      <span class="ftd-diag-val"><t t-esc="fmtNum(dv.ext_voltage, 2)"/> V</span>
+                    </t>
+                    <t t-else=""><span class="ftd-diag-null">—</span></t>
+                  </td>
+                  <td>
+                    <t t-if="dv.gsm_signal != null">
+                      <span class="ftd-diag-val"><t t-esc="dv.gsm_signal"/>/5</span>
+                    </t>
+                    <t t-else=""><span class="ftd-diag-null">—</span></t>
+                  </td>
+                  <td>
+                    <t t-if="dv.movement === true"><span class="ftd-diag-on">YES</span></t>
+                    <t t-elif="dv.movement === false"><span class="ftd-diag-off">no</span></t>
+                    <t t-else=""><span class="ftd-diag-null">—</span></t>
+                  </td>
+                </tr>
+              </t>
+            </tbody>
+          </table>
+        </div>
+      </t>
+    </div><!-- /ftd-diag-card -->
 
   </div><!-- /ftd-wrap -->
   </t><!-- /t-else loading -->

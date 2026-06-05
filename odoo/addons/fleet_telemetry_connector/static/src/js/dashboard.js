@@ -87,6 +87,7 @@ function updateDoughnutChart(chart, data) {
 
 class FleetMap {
     constructor(containerId, onMarkerClick) {
+        console.log("[MAP] FleetMap constructor, containerId =", containerId);
         this._id = containerId;
         this._map = null;
         this._markers = new Map();
@@ -95,10 +96,23 @@ class FleetMap {
     }
 
     init() {
+        console.log("[MAP] init called");
         const el = document.getElementById(this._id);
-        if (!el || this._initialized || typeof L === "undefined") return;
+        console.log("[MAP] element =", el, "| _initialized =", this._initialized, "| typeof L =", typeof L);
+        if (!el || this._initialized || typeof L === "undefined") {
+            console.warn("[MAP] init bailed: el =", el, "_initialized =", this._initialized, "L defined =", typeof L !== "undefined");
+            return;
+        }
         if (el._leafletMap) { el._leafletMap.remove(); el._leafletMap = null; }
-        this._map = L.map(el, { zoomControl: true, attributionControl: true });
+
+        try {
+            console.log("[MAP] before L.map()");
+            this._map = L.map(el, { zoomControl: true, attributionControl: true });
+            console.log("[MAP] after L.map(), instance =", this._map);
+        } catch (e) {
+            console.error("[MAP] L.map() threw:", e);
+            return;
+        }
 
         // Use OSM tiles — reliable for demos without network restrictions
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -146,8 +160,26 @@ class FleetMap {
         if (!this._map) return;
         const seen = new Set();
 
+        // A1 — GPS coordinate logging (last 20 updates, ring-buffered)
+        if (!this._gpsLog) this._gpsLog = [];
+        for (const v of vehicles) {
+            this._gpsLog.push({
+                id: v.device_id, lat: v.lat, lng: v.lng,
+                speed: v.speed, ts: v.timestamp,
+            });
+            if (this._gpsLog.length > 20) this._gpsLog.shift();
+            console.log("[GPS]", v.device_id, v.lat, v.lng, v.speed, v.timestamp);
+        }
+
+        // A2 — Reject invalid / no-fix coordinates (0,0 and near-zero)
+        const isValidCoord = (lat, lng) => {
+            if (lat == null || lng == null) return false;
+            if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) return false;
+            return true;
+        };
+
         // Show demo markers if no real vehicles with GPS
-        const hasGps = vehicles.some(v => v.lat != null && v.lng != null);
+        const hasGps = vehicles.some(v => isValidCoord(v.lat, v.lng));
         if (!hasGps && vehicles.length === 0) {
             // Place a single demo marker so map isn't blank
             if (!this._demoMarker) {
@@ -167,7 +199,7 @@ class FleetMap {
         }
 
         for (const v of vehicles) {
-            if (v.lat == null || v.lng == null) continue;
+            if (!isValidCoord(v.lat, v.lng)) continue;  // A2: skip 0,0 and no-fix
             seen.add(v.device_id);
 
             const isMoving   = v.movement && v.ignition;
@@ -220,7 +252,7 @@ class FleetMap {
 
         // Auto-fit bounds only on first load
         if (!this._fitted && seen.size > 0) {
-            const points = vehicles.filter(v => v.lat && v.lng).map(v => [v.lat, v.lng]);
+            const points = vehicles.filter(v => isValidCoord(v.lat, v.lng)).map(v => [v.lat, v.lng]);
             if (points.length) {
                 this._map.fitBounds(points, { padding: [48, 48] });
                 this._fitted = true;
@@ -280,6 +312,8 @@ class FleetTelemetryDashboard extends Component {
             // Drawer state
             drawerOpen:    false,
             drawerVehicle: null,
+            // D — Live diagnostics panel (raw WS data, no aggregation)
+            diagVehicles:  {},   // device_id → latest raw event object
         });
 
         this._ws          = null;
@@ -288,14 +322,20 @@ class FleetTelemetryDashboard extends Component {
         this._fuelChart   = null;
         this._speedChart  = null;
         this._ignChart    = null;
-        this._fleetMap    = new FleetMap("fleetMap", (v) => this.openDrawer(v));
+        // DRAWER DISABLED: pass null so marker clicks do nothing
+        this._fleetMap    = new FleetMap("fleetMap", null);
 
         onMounted(async () => {
+            console.log("[MAP] component onMounted fired");
             // Always start with drawer closed — state may persist from previous navigation
             this.state.drawerOpen = false;
             this.state.drawerVehicle = null;
 
-            this._fleetMap.init();
+            // NOTE: _fleetMap.init() is intentionally NOT called here.
+            // The #fleetMap element lives inside the t-else branch (state.loading = false),
+            // so it does not exist in the DOM yet when onMounted fires.
+            // init() is called inside _applySummary() once loading flips to false and
+            // OWL has rendered the map container.
             this._initCharts();
             await this._loadApiKey();
             this._connectWs();
@@ -303,9 +343,6 @@ class FleetTelemetryDashboard extends Component {
             setTimeout(() => {
                 if (this.state.loading) this._fetchSnapshot();
             }, 2000);
-            setTimeout(() => { this._fleetMap.invalidate(); }, 200);
-            setTimeout(() => { this._fleetMap.invalidate(); }, 800);
-            setTimeout(() => { this._fleetMap.invalidate(); }, 2000);
         });
 
         onWillUnmount(() => {
@@ -402,7 +439,21 @@ class FleetTelemetryDashboard extends Component {
 
     _applySummary(data) {
         if (!data) return;
-        this.state.loading       = false;
+        this.state.loading = false;
+
+        // #fleetMap is inside the t-else branch — it only exists after loading flips false.
+        // OWL's reactivity re-renders synchronously on state assignment, so by the time
+        // the next line executes the element is already in the DOM.
+        // Guard with _initialized so this only runs once.
+        if (!this._fleetMap._initialized) {
+            console.log("[MAP] _applySummary: state.loading flipped false, checking element...");
+            console.log("[MAP] document.getElementById('fleetMap') =", document.getElementById("fleetMap"));
+            console.log("[MAP] calling _fleetMap.init()");
+            this._fleetMap.init();
+            // Give the browser one paint cycle to measure the container before invalidating
+            setTimeout(() => { this._fleetMap.invalidate(); }, 150);
+            setTimeout(() => { this._fleetMap.invalidate(); }, 600);
+        }
         this.state.lastUpdate    = data.as_of;
         this.state.totalVehicles = data.total_vehicles || 0;
         this.state.ignitionOn    = data.ignition_on    || 0;
@@ -422,11 +473,21 @@ class FleetTelemetryDashboard extends Component {
             this.state.vehicles = data.vehicles;
             this._updateCharts(data.vehicles);
             this._fleetMap.updateVehicles(data.vehicles);
+            // D — seed diagnostics panel from snapshot
+            const diag = {};
+            for (const v of data.vehicles) { if (v.device_id) diag[v.device_id] = v; }
+            this.state.diagVehicles = diag;
         }
     }
 
     _applyVehicleDelta(event) {
         if (!event?.device_id) return;
+
+        // D — update diagnostics panel with raw event (no transformation)
+        this.state.diagVehicles = {
+            ...this.state.diagVehicles,
+            [event.device_id]: event,
+        };
 
         // Update or insert the vehicle in the array
         const idx = this.state.vehicles.findIndex(v => v.device_id === event.device_id);
@@ -452,7 +513,7 @@ class FleetTelemetryDashboard extends Component {
             gnss_hdop:    event.gnss_hdop   ?? null,
             buffered:     Boolean(event.buffered),
             stale:        false,
-            age_seconds:  0,
+            age_seconds:  event.timestamp ? Math.round((Date.now() - Date.parse(event.timestamp)) / 1000) : 0,
         };
 
         if (idx >= 0) {
@@ -463,6 +524,14 @@ class FleetTelemetryDashboard extends Component {
         this.state.lastUpdate    = updated.timestamp;
         this.state.totalVehicles = this.state.vehicles.length;
         this.state.loading       = false;
+
+        // If this is the first delta and the map isn't up yet, init it now
+        if (!this._fleetMap._initialized) {
+            console.log("[MAP] _applyVehicleDelta: loading flipped false, element =", document.getElementById("fleetMap"));
+            this._fleetMap.init();
+            setTimeout(() => { this._fleetMap.invalidate(); }, 150);
+            setTimeout(() => { this._fleetMap.invalidate(); }, 600);
+        }
 
         // Recompute aggregates locally (backend will confirm on next summary)
         this._recomputeAggregates();
@@ -619,24 +688,84 @@ class FleetTelemetryDashboard extends Component {
         updateDoughnutChart(this._ignChart, [on, off]);
     }
 
-    // ── Vehicle detail drawer ─────────────────────────────────────────────────
-    // Opens a slide-in panel with full telemetry for the selected vehicle.
-    // Reuses the live-cache vehicle object — no extra fetch needed.
+    // ── Vehicle detail drawer — DISABLED for diagnostics ─────────────────────
 
     openDrawer(vehicle) {
-        this.state.drawerVehicle = vehicle;
-        this.state.drawerOpen = true;
+        // DISABLED: drawer suppressed during map diagnosis
+        // this.state.drawerVehicle = vehicle;
+        // this.state.drawerOpen = true;
+        console.log("[DRAWER] suppressed for vehicle", vehicle?.device_id);
     }
 
     closeDrawer() {
+        console.log("[DRAWER] CLOSE fired");
         this.state.drawerOpen = false;
         this.state.drawerVehicle = null;
-        // Re-trigger map size calculation after drawer slides out
-        setTimeout(() => { this._fleetMap.invalidate(); }, 300);
     }
 
     openTableRowDrawer(vehicle) {
-        this.openDrawer(vehicle);
+        // DISABLED: drawer suppressed during map diagnosis
+        console.log("[DRAWER] row click suppressed for vehicle", vehicle?.device_id);
+    }
+
+    // ── Template helpers — OWL cannot call Math/Number/Date directly ─────────
+    // All expressions that need global JS functions must go through component
+    // methods exposed here.
+
+    fmtTimestamp(ts) {
+        if (!ts) return "";
+        try { return new Date(ts).toLocaleTimeString(); } catch { return ""; }
+    }
+
+    fmtAgeMin(seconds) {
+        // For trip duration display: "Xm" format
+        if (seconds == null) return "—";
+        return Math.floor(seconds / 60) + "m";
+    }
+
+    fmtAgeRow(seconds) {
+        // For table "Last Seen" column: "Xs ago" / "Xm ago"
+        if (seconds == null) return "—";
+        if (seconds < 60) return seconds + "s ago";
+        return Math.floor(seconds / 60) + "m ago";
+    }
+
+    fmtCoord(val) {
+        // Format a lat/lng value to 6dp; returns "" if null/near-zero
+        if (val == null) return "";
+        if (Math.abs(val) < 0.0001) return "";
+        return val.toFixed(6);
+    }
+
+    isValidCoordVal(val) {
+        return val != null && Math.abs(val) > 0.0001;
+    }
+
+    fmtNum(val, dp) {
+        if (val == null) return "";
+        return Number(val).toFixed(dp);
+    }
+
+    // ── Live diagnostics panel helpers (D) ───────────────────────────────────
+    // Returns sorted array of [device_id, raw_event] pairs for template rendering.
+    diagEntries() {
+        return Object.entries(this.state.diagVehicles).sort((a, b) => a[0].localeCompare(b[0]));
+    }
+
+    diagAge(ts) {
+        if (!ts) return "—";
+        const s = Math.round((Date.now() - Date.parse(ts)) / 1000);
+        if (s < 60)   return `${s}s ago`;
+        if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+        return `${Math.floor(s / 3600)}h ago`;
+    }
+
+    diagFmt(v, key) {
+        const val = v[key] ?? (v.position?.[key]) ?? (v.telemetry?.[key]);
+        if (val === null || val === undefined) return "—";
+        if (typeof val === "boolean") return val ? "ON" : "OFF";
+        if (typeof val === "number") return Number(val).toFixed(key === "lat" || key === "lng" ? 6 : 2);
+        return String(val);
     }
 
     // Expose format helpers to OWL template

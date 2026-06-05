@@ -39,21 +39,34 @@ $rx:     4px;
 $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 // ── Odoo wrapper reset ────────────────────────────────────────────────────────
-// Ensure the Odoo action/view containers don't clip our content
+// Force every Odoo container that wraps our dashboard to allow natural scroll.
+// Do NOT set overflow on the dashboard itself — that creates a nested scroll
+// context which breaks the outer page scroll chain.
+html, body {
+  overflow-y: auto !important;
+}
+
+.o_web_client,
+.o_action_manager,
 .o_action_manager > .o_action,
-.o_view_controller {
+.o_view_controller,
+.o_content {
   overflow-y: auto !important;
   overflow-x: hidden !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: none !important;
 }
 
 // Only scope our dark styles inside the dashboard container
 .o_fleet_dashboard {
   background: $bg1;
-  min-height: 100vh;
+  // Do NOT set overflow or height here — that would create a nested scroll
+  // context and break the page scroll chain. Let Odoo's .o_content scroll.
+  min-height: 0;
   font-family: $font;
   color: $t1;
-  overflow-y: auto;
-  overflow-x: hidden;
 
   *, *::before, *::after {
     box-sizing: border-box;
@@ -61,7 +74,10 @@ $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
   // ── Layout ────────────────────────────────────────────────────────────────
-  .ftd-wrap { padding: 0 24px 32px; }
+  .ftd-wrap {
+    padding: 0 24px 48px;
+    overflow: visible;
+  }
 
   // ── Topbar ────────────────────────────────────────────────────────────────
   .ftd-topbar {
@@ -234,7 +250,8 @@ $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: $bg0;
     display: flex;
     flex-direction: column;
-    height: 520px;
+    height: 420px;       /* A: map card total — header + map + legend */
+    max-height: 420px;
     position: relative;
     // Clip children visually using a pseudo-element border, not overflow
     &::before {
@@ -264,13 +281,14 @@ $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   .ftd-map-badge { background: $bdim; color: $blue; border: 1px solid rgba(59,130,246,.25); border-radius: 20px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
   .ftd-map-hint  { font-size: 11px; color: $t3; margin-left: auto; }
 
-  // Explicit pixel height — Leaflet REQUIRES this
-  // overflow:hidden on a Leaflet container prevents tile rendering — never use it here
+  // Explicit pixel height — Leaflet REQUIRES a fixed height on its container.
+  // overflow:hidden on a Leaflet container prevents tile rendering — never use it here.
   #fleetMap,
   .ftd-map {
     width: 100% !important;
-    height: 440px !important;
-    min-height: 440px !important;
+    height: 350px !important;   /* A: 350px — fits inside 420px card */
+    min-height: 350px !important;
+    max-height: 350px !important;
     display: block !important;
     background: #0b1628;
     flex-shrink: 0;
@@ -538,4 +556,56 @@ $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     padding: 28px 12px; color: $t3; font-size: 12px; gap: 6px; text-align: center;
   }
   .ftd-empty-icon { font-size: 24px; opacity: .4; }
+
+  // ── Live Diagnostics Panel (D — FMC003 validation) ────────────────────────
+  .ftd-diag-card {
+    margin-bottom: 24px;
+    border: 1px solid rgba(245,158,11,.3);  // amber border — visible as a debug panel
+    border-radius: $r;
+    background: $bg2;
+    overflow: hidden;
+  }
+  .ftd-diag-header {
+    display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+    border-bottom: 1px solid rgba(245,158,11,.2);
+    background: rgba(245,158,11,.06);
+  }
+  .ftd-diag-title {
+    font-size: 12px; font-weight: 700; color: $amber;
+    text-transform: uppercase; letter-spacing: .07em;
+  }
+  .ftd-diag-subtitle {
+    font-size: 11px; color: $t3; margin-left: auto;
+  }
+  .ftd-diag-table-wrap {
+    overflow-x: auto;
+    &::-webkit-scrollbar { height: 3px; }
+    &::-webkit-scrollbar-thumb { background: $b2; border-radius: 4px; }
+  }
+  .ftd-diag-table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    min-width: 900px;
+    thead tr { background: rgba(255,255,255,.02); }
+    thead th {
+      padding: 7px 12px; text-align: left; font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em; color: $t3;
+      white-space: nowrap; border-bottom: 1px solid rgba(245,158,11,.15);
+    }
+    tbody tr {
+      border-bottom: 1px solid $b1; transition: background .1s;
+      &:last-child { border-bottom: none; }
+      &:hover { background: rgba(245,158,11,.04); }
+    }
+    td { padding: 8px 12px; color: $t2; vertical-align: middle; white-space: nowrap; }
+    .ftd-diag-id    { color: $amber; font-weight: 600; }
+    .ftd-diag-val   { color: $t1; font-weight: 600; }
+    .ftd-diag-null  { color: $t4; }
+    .ftd-diag-on    { color: $green; font-weight: 700; }
+    .ftd-diag-off   { color: $t4; }
+    .ftd-diag-age   { color: $t3; font-size: 11px; }
+  }
+  .ftd-diag-empty {
+    padding: 20px 16px; font-size: 12px; color: $t3; font-style: italic;
+  }
 }
