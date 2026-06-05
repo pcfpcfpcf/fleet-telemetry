@@ -291,17 +291,18 @@ class FleetTelemetryDashboard extends Component {
         this._fleetMap    = new FleetMap("fleetMap", (v) => this.openDrawer(v));
 
         onMounted(async () => {
+            // Always start with drawer closed — state may persist from previous navigation
+            this.state.drawerOpen = false;
+            this.state.drawerVehicle = null;
+
             this._fleetMap.init();
             this._initCharts();
-            // Load API key from Odoo config params, then connect
             await this._loadApiKey();
             this._connectWs();
             await this._loadAlerts();
             setTimeout(() => {
                 if (this.state.loading) this._fetchSnapshot();
             }, 2000);
-            // Leaflet needs multiple invalidateSize calls because Odoo's
-            // view transitions complete asynchronously after onMounted fires
             setTimeout(() => { this._fleetMap.invalidate(); }, 200);
             setTimeout(() => { this._fleetMap.invalidate(); }, 800);
             setTimeout(() => { this._fleetMap.invalidate(); }, 2000);

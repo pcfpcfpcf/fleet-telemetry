@@ -171,7 +171,7 @@
           <span class="ftd-map-badge"><t t-esc="state.vehicles.length"/> vehicles</span>
           <span class="ftd-map-hint">Click a marker to view details</span>
         </div>
-        <div id="fleetMap" class="ftd-map"/>
+        <div id="fleetMap" style="width:100%;height:440px;min-height:440px;display:block;background:#0b1628;"/>
         <div class="ftd-map-legend">
           <span><span class="ftd-map-legend-dot ftd-map-legend-dot--online"/>Online</span>
           <span><span class="ftd-map-legend-dot ftd-map-legend-dot--moving"/>Moving</span>
