@@ -1,6 +1,6 @@
 {
     "name": "Fleet Telemetry Connector",
-    "version": "17.0.3.0.0",
+    "version": "17.0.4.0.0",
     "summary": "FMC003 real-time telemetry cockpit — WebSocket live dashboard, full field extraction",
     "description": """
         Real-time fleet telemetry powered by the L4 WebSocket stream.

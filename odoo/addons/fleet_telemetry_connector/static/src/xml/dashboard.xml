@@ -3,394 +3,504 @@
 <t t-name="fleet_telemetry_connector.Dashboard">
 <div class="o_fleet_dashboard">
 
-    <!-- ── Top bar ──────────────────────────────────────────────────────── -->
-    <div class="ftd-topbar">
-        <div class="ftd-topbar-left">
-            <span class="ftd-title">Fleet Operations</span>
-            <span t-if="state.connected" class="ftd-badge ftd-badge--live">
-                <span class="ftd-pulse"/>LIVE
-            </span>
-            <span t-else="" class="ftd-badge ftd-badge--offline">OFFLINE</span>
-        </div>
-        <div class="ftd-topbar-right">
-            <span t-if="state.lastUpdate" class="ftd-last-update">
-                Updated <t t-esc="new Date(state.lastUpdate).toLocaleTimeString()"/>
-            </span>
-        </div>
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TOP BAR
+       ══════════════════════════════════════════════════════════════════ -->
+  <div class="ftd-topbar">
+    <div class="ftd-topbar-brand">
+      <div class="ftd-topbar-icon">🚛</div>
+      <span class="ftd-title">Fleet Operations</span>
+      <span t-if="state.connected" class="ftd-badge ftd-badge--live">
+        <span class="ftd-pulse"/>LIVE
+      </span>
+      <span t-else="" class="ftd-badge ftd-badge--offline">OFFLINE</span>
     </div>
 
-    <!-- ── Loading skeleton ────────────────────────────────────────────── -->
-    <t t-if="state.loading">
-        <div class="ftd-skeleton-grid">
-            <t t-foreach="[1,2,3,4,5,6,7,8]" t-as="i" t-key="i">
-                <div class="ftd-skeleton-card"><div class="ftd-skeleton-line ftd-skeleton-line--short"/><div class="ftd-skeleton-line"/></div>
-            </t>
+    <div class="ftd-topbar-center">
+      <input class="ftd-search" type="text" placeholder="Search vehicles, drivers…"/>
+    </div>
+
+    <div class="ftd-topbar-right">
+      <span t-if="state.lastUpdate" class="ftd-last-update">
+        Updated <t t-esc="new Date(state.lastUpdate).toLocaleTimeString()"/>
+      </span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       LOADING SKELETON
+       ══════════════════════════════════════════════════════════════════ -->
+  <t t-if="state.loading">
+    <div class="ftd-wrap">
+      <div class="ftd-skeleton-grid">
+        <t t-foreach="[1,2,3,4,5,6,7,8]" t-as="i" t-key="i">
+          <div class="ftd-skeleton-card">
+            <div class="ftd-skeleton-line ftd-skeleton-line--short"/>
+            <div class="ftd-skeleton-line ftd-skeleton-line--value"/>
+          </div>
+        </t>
+      </div>
+      <div class="ftd-skeleton-card ftd-skeleton-card--tall"/>
+    </div>
+  </t>
+
+  <t t-else="">
+  <div class="ftd-wrap">
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         KPI ROW — 8 cards
+         ════════════════════════════════════════════════════════════════ -->
+    <div class="ftd-kpi-grid">
+
+      <!-- Connected -->
+      <div class="ftd-kpi ftd-kpi--blue">
+        <div class="ftd-kpi-top">
+          <div class="ftd-kpi-label">Connected</div>
+          <div class="ftd-kpi-icon-wrap ftd-kpi-icon-wrap--blue">🚛</div>
         </div>
-        <div class="ftd-skeleton-card ftd-skeleton-card--tall"/>
+        <div class="ftd-kpi-value ftd-kpi-value--blue">
+          <t t-esc="state.totalVehicles"/>
+        </div>
+        <div class="ftd-kpi-trend ftd-kpi-trend--ok">vehicles total</div>
+      </div>
+
+      <!-- Online -->
+      <div class="ftd-kpi ftd-kpi--green">
+        <div class="ftd-kpi-top">
+          <div class="ftd-kpi-label">Online</div>
+          <div class="ftd-kpi-icon-wrap ftd-kpi-icon-wrap--green">🟢</div>
+        </div>
+        <div class="ftd-kpi-value ftd-kpi-value--green">
+          <t t-esc="state.ignitionOn"/>
+        </div>
+        <div class="ftd-kpi-trend ftd-kpi-trend--up">↑ ignition on</div>
+      </div>
+
+      <!-- Offline -->
+      <div t-attf-class="ftd-kpi {{state.offlineCount > 0 ? 'ftd-kpi--red' : ''}}">
+        <div class="ftd-kpi-top">
+          <div class="ftd-kpi-label">Offline</div>
+          <div t-attf-class="ftd-kpi-icon-wrap {{state.offlineCount > 0 ? 'ftd-kpi-icon-wrap--red' : 'ftd-kpi-icon-wrap--cyan'}}">📡</div>
+        </div>
+        <div t-attf-class="ftd-kpi-value {{state.offlineCount > 0 ? 'ftd-kpi-value--red' : 'ftd-kpi-value--muted'}}">
+          <t t-esc="state.offlineCount"/>
+        </div>
+        <div t-attf-class="ftd-kpi-trend {{state.offlineCount > 0 ? 'ftd-kpi-trend--down' : 'ftd-kpi-trend--ok'}}">
+          <t t-if="state.offlineCount > 0">↓ need attention</t>
+          <t t-else="">all reporting</t>
+        </div>
+      </div>
+
+      <!-- Moving -->
+      <div class="ftd-kpi ftd-kpi--cyan">
+        <div class="ftd-kpi-top">
+          <div class="ftd-kpi-label">Moving</div>
+          <div class="ftd-kpi-icon-wrap ftd-kpi-icon-wrap--cyan">➡️</div>
+        </div>
+        <div class="ftd-kpi-value ftd-kpi-value--cyan">
+          <t t-esc="state.moving"/>
+        </div>
+        <div class="ftd-kpi-trend ftd-kpi-trend--ok">in motion now</div>
+      </div>
+
+      <!-- Avg Speed -->
+      <div class="ftd-kpi ftd-kpi--purple">
+        <div class="ftd-kpi-top">
+          <div class="ftd-kpi-label">Avg Speed</div>
+          <div class="ftd-kpi-icon-wrap ftd-kpi-icon-wrap--purple">⚡</div>
+        </div>
+        <div class="ftd-kpi-value ftd-kpi-value--purple">
+          <t t-esc="state.avgSpeed"/><span class="ftd-kpi-unit"> km/h</span>
+        </div>
+        <div class="ftd-kpi-trend ftd-kpi-trend--ok">fleet average</div>
+      </div>
+
+      <!-- Active Alerts -->
+      <div t-attf-class="ftd-kpi {{state.unacknowledgedAlerts > 0 ? 'ftd-kpi--red' : ''}}">
+        <div class="ftd-kpi-top">
+          <div class="ftd-kpi-label">Active Alerts</div>
+          <div t-attf-class="ftd-kpi-icon-wrap {{state.unacknowledgedAlerts > 0 ? 'ftd-kpi-icon-wrap--red' : 'ftd-kpi-icon-wrap--amber'}}">🔔</div>
+        </div>
+        <div t-attf-class="ftd-kpi-value {{state.unacknowledgedAlerts > 0 ? 'ftd-kpi-value--red' : 'ftd-kpi-value--muted'}}">
+          <t t-esc="state.unacknowledgedAlerts"/>
+        </div>
+        <div t-attf-class="ftd-kpi-trend {{state.unacknowledgedAlerts > 0 ? 'ftd-kpi-trend--down' : 'ftd-kpi-trend--ok'}}">
+          <t t-if="state.unacknowledgedAlerts > 0">unacknowledged</t>
+          <t t-else="">all clear</t>
+        </div>
+      </div>
+
+      <!-- Avg Fuel -->
+      <div t-attf-class="ftd-kpi {{state.avgFuel != null and state.avgFuel &lt; 20 ? 'ftd-kpi--amber' : ''}}">
+        <div class="ftd-kpi-top">
+          <div class="ftd-kpi-label">Avg Fuel</div>
+          <div class="ftd-kpi-icon-wrap ftd-kpi-icon-wrap--amber">⛽</div>
+        </div>
+        <div t-attf-class="ftd-kpi-value {{state.avgFuel != null and state.avgFuel &lt; 20 ? 'ftd-kpi-value--amber' : 'ftd-kpi-value--muted'}}">
+          <t t-if="state.avgFuel != null"><t t-esc="state.avgFuel"/><span class="ftd-kpi-unit">%</span></t>
+          <t t-else="">—</t>
+        </div>
+        <div class="ftd-kpi-trend ftd-kpi-trend--ok">fleet average</div>
+      </div>
+
+      <!-- Stale / Fresh -->
+      <div t-attf-class="ftd-kpi {{state.stale > 0 ? 'ftd-kpi--amber' : ''}}">
+        <div class="ftd-kpi-top">
+          <div class="ftd-kpi-label">Data Quality</div>
+          <div class="ftd-kpi-icon-wrap ftd-kpi-icon-wrap--blue">📶</div>
+        </div>
+        <div class="ftd-kpi-value">
+          <span t-attf-class="{{state.stale > 0 ? 'ftd-kpi-value--amber' : 'ftd-kpi-value--muted'}}"><t t-esc="state.stale"/></span>
+          <span style="font-size:16px;color:rgba(143,163,191,.3);font-weight:400"> / </span>
+          <span class="ftd-kpi-value--green"><t t-esc="state.fresh"/></span>
+        </div>
+        <div class="ftd-kpi-trend ftd-kpi-trend--ok">stale / fresh</div>
+      </div>
+
+    </div><!-- /kpi-grid -->
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         MAIN AREA — Map hero + sidebar (alerts + trips)
+         ════════════════════════════════════════════════════════════════ -->
+    <div class="ftd-main-row">
+
+      <!-- MAP ────────────────────────────────────────────────────────── -->
+      <div class="ftd-map-card">
+        <div class="ftd-map-header">
+          <span class="ftd-map-title">Live Map</span>
+          <span class="ftd-map-badge"><t t-esc="state.vehicles.length"/> vehicles</span>
+          <span class="ftd-map-hint">Click a marker to view details</span>
+        </div>
+        <div id="fleetMap" class="ftd-map"/>
+        <div class="ftd-map-legend">
+          <span><span class="ftd-map-legend-dot ftd-map-legend-dot--online"/>Online</span>
+          <span><span class="ftd-map-legend-dot ftd-map-legend-dot--moving"/>Moving</span>
+          <span><span class="ftd-map-legend-dot ftd-map-legend-dot--offline"/>Offline</span>
+        </div>
+      </div>
+
+      <!-- SIDEBAR ────────────────────────────────────────────────────── -->
+      <div class="ftd-sidebar">
+
+        <!-- Live Alerts -->
+        <div class="ftd-card ftd-alerts-card">
+          <div class="ftd-card-header">
+            <span class="ftd-card-title">Live Alerts</span>
+            <t t-if="state.alerts.length">
+              <span class="ftd-badge ftd-badge--count"><t t-esc="state.alerts.length"/></span>
+            </t>
+            <span class="ftd-view-all">View all</span>
+          </div>
+          <div class="ftd-alerts-list">
+            <t t-if="!state.alerts.length">
+              <div class="ftd-empty">
+                <div class="ftd-empty-icon">✅</div>
+                No active alerts
+              </div>
+            </t>
+            <t t-foreach="state.alerts.slice(0, 12)" t-as="alert" t-key="alert.id || alert_index">
+              <div t-attf-class="ftd-alert-row ftd-alert-row--{{(alert.severity || 'info').toLowerCase()}}">
+                <div class="ftd-alert-icon">
+                  <t t-if="(alert.severity || '').toUpperCase() === 'CRITICAL'">🔴</t>
+                  <t t-elif="(alert.severity || '').toUpperCase() === 'HIGH'">🟠</t>
+                  <t t-elif="(alert.severity || '').toUpperCase() === 'MEDIUM' or (alert.severity || '').toUpperCase() === 'WARNING'">⚠️</t>
+                  <t t-elif="(alert.severity || '').toUpperCase() === 'LOW'">🟡</t>
+                  <t t-else="">ℹ️</t>
+                </div>
+                <div class="ftd-alert-content">
+                  <div class="ftd-alert-type"><t t-esc="(alert.alert_type || '').replace(/_/g, ' ')"/></div>
+                  <div class="ftd-alert-meta">
+                    <t t-esc="alert.device_id ? alert.device_id.slice(-8) : '—'"/>
+                    <t t-if="alert.timestamp"> · <t t-esc="new Date(alert.timestamp).toLocaleTimeString()"/></t>
+                  </div>
+                </div>
+                <div class="ftd-alert-sev-badge"><t t-esc="alert.severity || 'INFO'"/></div>
+              </div>
+            </t>
+          </div>
+        </div>
+
+        <!-- Active Trips (demo data when no real trips) -->
+        <div class="ftd-card ftd-trips-card">
+          <div class="ftd-card-header">
+            <span class="ftd-card-title">Active Trips</span>
+            <span class="ftd-view-all">View all</span>
+          </div>
+          <!-- Real trips if available from vehicles in motion -->
+          <t t-if="state.vehicles.filter(v => v.ignition and v.movement).length > 0">
+            <t t-foreach="state.vehicles.filter(v => v.ignition and v.movement).slice(0,4)" t-as="tv" t-key="tv.device_id">
+              <div class="ftd-trip-row">
+                <div class="ftd-trip-icon">🚛</div>
+                <div class="ftd-trip-info">
+                  <div class="ftd-trip-id"><t t-esc="tv.device_id.slice(-8)"/></div>
+                  <div class="ftd-trip-driver"><t t-esc="fmtSpeed(tv.speed)"/> · ignition ON</div>
+                </div>
+                <div class="ftd-trip-stats">
+                  <div class="ftd-trip-duration"><t t-esc="tv.age_seconds != null ? Math.floor(tv.age_seconds / 60) + 'm' : '—'"/></div>
+                  <div class="ftd-trip-distance"><t t-esc="fmtOdo(tv.trip_odometer)"/></div>
+                </div>
+              </div>
+            </t>
+          </t>
+          <!-- Demo placeholder when no active trips -->
+          <t t-else="">
+            <div class="ftd-trip-row">
+              <div class="ftd-trip-icon">🚛</div>
+              <div class="ftd-trip-info">
+                <div class="ftd-trip-id">FMC003-001</div>
+                <div class="ftd-trip-driver">Waiting for ignition…</div>
+              </div>
+              <div class="ftd-trip-stats">
+                <div class="ftd-trip-duration" style="color: rgba(143,163,191,0.3)">—</div>
+                <div class="ftd-trip-distance" style="color: rgba(143,163,191,0.2)">— km</div>
+              </div>
+            </div>
+            <div class="ftd-empty" style="padding:16px">
+              <div class="ftd-empty-icon">🛣️</div>
+              No active trips
+            </div>
+          </t>
+        </div>
+
+      </div><!-- /sidebar -->
+    </div><!-- /main-row -->
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         VEHICLE TABLE
+         ════════════════════════════════════════════════════════════════ -->
+    <div class="ftd-card ftd-table-card">
+      <div class="ftd-table-toolbar">
+        <span class="ftd-card-title">Live Vehicles</span>
+        <input class="ftd-table-search" type="text" placeholder="Search vehicles…"/>
+        <span class="ftd-table-count"><t t-esc="state.vehicles.length"/> vehicles</span>
+        <span style="font-size:11px;color:rgba(77,100,130,.8)">Click a row to view details</span>
+      </div>
+      <div class="ftd-table-wrap">
+        <table class="ftd-table">
+          <thead>
+            <tr>
+              <th>Vehicle</th>
+              <th>Status</th>
+              <th>Speed</th>
+              <th>Ignition</th>
+              <th>Fuel</th>
+              <th>Battery</th>
+              <th>GSM</th>
+              <th>Last Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Real vehicle rows -->
+            <t t-foreach="state.vehicles" t-as="v" t-key="v.device_id">
+              <tr t-attf-class="ftd-tr--clickable {{v.stale ? 'ftd-tr--stale' : ''}}"
+                  t-on-click="() => openTableRowDrawer(v)">
+                <td class="ftd-td-id">
+                  <span class="ftd-device-badge">
+                    <span class="ftd-dot ftd-dot--green" t-if="v.ignition and not v.stale"/>
+                    <span class="ftd-dot ftd-dot--amber" t-elif="v.ignition and v.stale"/>
+                    <span class="ftd-dot ftd-dot--muted" t-else=""/>
+                    <t t-esc="v.device_id"/>
+                  </span>
+                </td>
+                <td>
+                  <span t-if="v.ignition and v.movement"  class="ftd-status ftd-status--moving">Moving</span>
+                  <span t-elif="v.ignition"               class="ftd-status ftd-status--idle">Idle</span>
+                  <span t-else=""                          class="ftd-status ftd-status--off">Off</span>
+                </td>
+                <td class="ftd-td-num">
+                  <t t-esc="v.speed != null ? v.speed.toFixed(0) + ' km/h' : '—'"/>
+                </td>
+                <td>
+                  <span t-if="v.ignition" style="color:#22c55e;font-size:12px;font-weight:600;">ON</span>
+                  <span t-else="" style="color:rgba(77,100,130,.8);font-size:12px;font-weight:600;">OFF</span>
+                </td>
+                <td>
+                  <div class="ftd-fuel-bar-wrap">
+                    <div class="ftd-fuel-bar-bg">
+                      <div t-attf-class="ftd-fuel-bar-fill {{v.fuel_level != null and v.fuel_level &lt; 15 ? 'ftd-fuel-bar-fill--low' : v.fuel_level != null and v.fuel_level &lt; 30 ? 'ftd-fuel-bar-fill--mid' : 'ftd-fuel-bar-fill--ok'}}"
+                           t-attf-style="width:{{v.fuel_level != null ? v.fuel_level : 0}}%"/>
+                    </div>
+                    <span class="ftd-fuel-label">
+                      <t t-esc="v.fuel_level != null ? v.fuel_level.toFixed(0) + '%' : '—'"/>
+                    </span>
+                  </div>
+                </td>
+                <td class="ftd-td-num">
+                  <t t-if="v.ext_voltage != null">
+                    <span t-attf-style="color:{{v.ext_voltage &lt; 11 ? '#ef4444' : v.ext_voltage &lt; 12 ? '#f59e0b' : '#22c55e'}}">
+                      <t t-esc="v.ext_voltage.toFixed(1)"/> V
+                    </span>
+                  </t>
+                  <t t-else="">—</t>
+                </td>
+                <td>
+                  <t t-if="v.gsm_signal != null">
+                    <span class="ftd-signal-bars">
+                      <t t-foreach="[1,2,3,4,5]" t-as="bar" t-key="bar">
+                        <span t-attf-class="ftd-bar {{bar &lt;= v.gsm_signal ? 'ftd-bar--active' : ''}}"/>
+                      </t>
+                    </span>
+                  </t>
+                  <t t-else="">—</t>
+                </td>
+                <td class="ftd-td-age">
+                  <t t-esc="v.age_seconds != null ? (v.age_seconds &lt; 60 ? v.age_seconds + 's' : Math.floor(v.age_seconds / 60) + 'm') + ' ago' : '—'"/>
+                </td>
+              </tr>
+            </t>
+            <!-- Demo placeholder rows when no real vehicles -->
+            <t t-if="state.vehicles.length === 0">
+              <t t-foreach="['FMC003-001','FMC003-002','FMC003-003']" t-as="demo" t-key="demo">
+                <tr style="opacity:.25">
+                  <td class="ftd-td-id"><span class="ftd-device-badge"><span class="ftd-dot ftd-dot--muted"/><t t-esc="demo"/></span></td>
+                  <td><span class="ftd-status ftd-status--off">—</span></td>
+                  <td class="ftd-td-num">—</td>
+                  <td>—</td>
+                  <td><div class="ftd-fuel-bar-wrap"><div class="ftd-fuel-bar-bg"><div class="ftd-fuel-bar-fill ftd-fuel-bar-fill--ok" style="width:0%"/></div><span class="ftd-fuel-label">—</span></div></td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td class="ftd-td-age">waiting…</td>
+                </tr>
+              </t>
+            </t>
+          </tbody>
+        </table>
+      </div>
+    </div><!-- /table-card -->
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         VEHICLE DETAIL DRAWER
+         ════════════════════════════════════════════════════════════════ -->
+    <t t-if="state.drawerOpen and state.drawerVehicle">
+      <div class="ftd-drawer-backdrop" t-on-click="closeDrawer"/>
+      <div class="ftd-drawer">
+        <div class="ftd-drawer-header">
+          <div class="ftd-drawer-title">
+            <span class="ftd-device-badge ftd-device-badge--lg">
+              <t t-esc="state.drawerVehicle.device_id"/>
+            </span>
+            <t t-set="dv" t-value="state.drawerVehicle"/>
+            <span t-if="dv.ignition and dv.movement"  class="ftd-status ftd-status--moving">Moving</span>
+            <span t-elif="dv.ignition"                class="ftd-status ftd-status--idle">Idle</span>
+            <span t-else=""                           class="ftd-status ftd-status--off">Off</span>
+          </div>
+          <button class="ftd-drawer-close" t-on-click="closeDrawer">✕</button>
+        </div>
+
+        <div class="ftd-drawer-body">
+          <t t-set="f" t-value="drawerFmt(state.drawerVehicle)"/>
+
+          <div class="ftd-drawer-section-title">Current Telemetry</div>
+          <div class="ftd-drawer-grid">
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Speed</div>
+              <div class="ftd-drawer-cell-value ftd-drawer-cell-value--accent"><t t-esc="f.speed"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Ignition</div>
+              <div t-attf-class="ftd-drawer-cell-value {{state.drawerVehicle.ignition ? 'ftd-drawer-cell-value--green' : 'ftd-drawer-cell-value--red'}}">
+                <t t-esc="f.ignition"/>
+              </div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Fuel Level</div>
+              <div t-attf-class="ftd-drawer-cell-value {{state.drawerVehicle.fuel_level != null and state.drawerVehicle.fuel_level &lt; 15 ? 'ftd-drawer-cell-value--red' : state.drawerVehicle.fuel_level != null and state.drawerVehicle.fuel_level &lt; 30 ? 'ftd-drawer-cell-value--amber' : ''}}">
+                <t t-esc="f.fuel"/>
+              </div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Odometer</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.odometer"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Trip Odo</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.tripOdo"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Movement</div>
+              <div t-attf-class="ftd-drawer-cell-value {{state.drawerVehicle.movement ? 'ftd-drawer-cell-value--green' : ''}}">
+                <t t-esc="f.movement"/>
+              </div>
+            </div>
+          </div>
+
+          <div class="ftd-drawer-section-title">GPS Position</div>
+          <div class="ftd-drawer-grid">
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Latitude</div>
+              <div class="ftd-drawer-cell-value ftd-drawer-cell-value--mono"><t t-esc="f.lat"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Longitude</div>
+              <div class="ftd-drawer-cell-value ftd-drawer-cell-value--mono"><t t-esc="f.lng"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Bearing</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.bearing"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">GNSS HDOP</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.gnssHdop"/></div>
+            </div>
+          </div>
+
+          <div class="ftd-drawer-section-title">Power &amp; Signal</div>
+          <div class="ftd-drawer-grid">
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Ext Voltage</div>
+              <div t-attf-class="ftd-drawer-cell-value {{state.drawerVehicle.ext_voltage != null and state.drawerVehicle.ext_voltage &lt; 11 ? 'ftd-drawer-cell-value--red' : ''}}">
+                <t t-esc="f.extVoltage"/>
+              </div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Bat Voltage</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.batVoltage"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Bat Level</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.batLevel"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">GSM Signal</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.gsm"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Network</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.networkType"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Eco Score</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.eco"/></div>
+            </div>
+          </div>
+
+          <div class="ftd-drawer-section-title">Status</div>
+          <div class="ftd-drawer-grid">
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Last Update</div>
+              <div class="ftd-drawer-cell-value" style="font-size:12px"><t t-esc="f.timestamp"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Age</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.age"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Buffered</div>
+              <div class="ftd-drawer-cell-value"><t t-esc="f.buffered"/></div>
+            </div>
+            <div class="ftd-drawer-cell">
+              <div class="ftd-drawer-cell-label">Stale</div>
+              <div t-attf-class="ftd-drawer-cell-value {{state.drawerVehicle.stale ? 'ftd-drawer-cell-value--amber' : ''}}">
+                <t t-esc="f.stale"/>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </t>
 
-    <t t-else="">
-
-        <!-- ── KPI strip (8 cards) ────────────────────────────────────── -->
-        <div class="ftd-kpi-grid ftd-kpi-grid--8">
-
-            <!-- Connected Devices (total in live cache) -->
-            <div class="ftd-kpi">
-                <div class="ftd-kpi-icon ftd-kpi-icon--indigo">🚛</div>
-                <div class="ftd-kpi-body">
-                    <div class="ftd-kpi-label">Connected</div>
-                    <div class="ftd-kpi-value"><t t-esc="state.totalVehicles"/></div>
-                </div>
-            </div>
-
-            <!-- Vehicles Online (ignition on = actively reporting) -->
-            <div class="ftd-kpi ftd-kpi--green">
-                <div class="ftd-kpi-icon ftd-kpi-icon--green">🟢</div>
-                <div class="ftd-kpi-body">
-                    <div class="ftd-kpi-label">Online</div>
-                    <div class="ftd-kpi-value ftd-kpi-value--green"><t t-esc="state.ignitionOn"/></div>
-                </div>
-            </div>
-
-            <!-- Vehicles Offline -->
-            <div t-attf-class="ftd-kpi {{state.offlineCount > 0 ? 'ftd-kpi--warn' : ''}}">
-                <div class="ftd-kpi-icon ftd-kpi-icon--slate">🔴</div>
-                <div class="ftd-kpi-body">
-                    <div class="ftd-kpi-label">Offline</div>
-                    <div t-attf-class="ftd-kpi-value {{state.offlineCount > 0 ? 'ftd-kpi-value--red' : ''}}">
-                        <t t-esc="state.offlineCount"/>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Moving -->
-            <div class="ftd-kpi">
-                <div class="ftd-kpi-icon ftd-kpi-icon--blue">➡️</div>
-                <div class="ftd-kpi-body">
-                    <div class="ftd-kpi-label">Moving</div>
-                    <div class="ftd-kpi-value ftd-kpi-value--blue"><t t-esc="state.moving"/></div>
-                </div>
-            </div>
-
-            <!-- Average Speed -->
-            <div class="ftd-kpi">
-                <div class="ftd-kpi-icon ftd-kpi-icon--purple">⚡</div>
-                <div class="ftd-kpi-body">
-                    <div class="ftd-kpi-label">Avg Speed</div>
-                    <div class="ftd-kpi-value ftd-kpi-value--purple">
-                        <t t-esc="state.avgSpeed"/>
-                        <span class="ftd-kpi-unit"> km/h</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Active Alerts -->
-            <div t-attf-class="ftd-kpi {{state.unacknowledgedAlerts > 0 ? 'ftd-kpi--warn' : ''}}">
-                <div class="ftd-kpi-icon ftd-kpi-icon--amber">🔔</div>
-                <div class="ftd-kpi-body">
-                    <div class="ftd-kpi-label">Active Alerts</div>
-                    <div t-attf-class="ftd-kpi-value {{state.unacknowledgedAlerts > 0 ? 'ftd-kpi-value--red' : ''}}">
-                        <t t-esc="state.unacknowledgedAlerts"/>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Avg Fuel -->
-            <div t-attf-class="ftd-kpi {{state.avgFuel != null and state.avgFuel &lt; 20 ? 'ftd-kpi--warn' : ''}}">
-                <div class="ftd-kpi-icon ftd-kpi-icon--amber">⛽</div>
-                <div class="ftd-kpi-body">
-                    <div class="ftd-kpi-label">Avg Fuel</div>
-                    <div t-attf-class="ftd-kpi-value {{state.avgFuel != null and state.avgFuel &lt; 20 ? 'ftd-kpi-value--red' : 'ftd-kpi-value--amber'}}">
-                        <t t-if="state.avgFuel != null"><t t-esc="state.avgFuel"/>%</t>
-                        <t t-else="">—</t>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Stale / Fresh -->
-            <div t-attf-class="ftd-kpi {{state.stale > 0 ? 'ftd-kpi--warn' : ''}}">
-                <div class="ftd-kpi-icon ftd-kpi-icon--slate">📡</div>
-                <div class="ftd-kpi-body">
-                    <div class="ftd-kpi-label">Stale / Fresh</div>
-                    <div class="ftd-kpi-value">
-                        <span t-attf-class="{{state.stale > 0 ? 'ftd-kpi-value--red' : 'ftd-kpi-value--green'}}"><t t-esc="state.stale"/></span>
-                        <span class="ftd-kpi-sep"> / </span>
-                        <span class="ftd-kpi-value--green"><t t-esc="state.fresh"/></span>
-                    </div>
-                </div>
-            </div>
-
-        </div><!-- /kpi-grid -->
-
-        <!-- ── Charts + Alerts row ────────────────────────────────────── -->
-        <div class="ftd-row ftd-row--charts">
-
-            <div class="ftd-card ftd-chart-card">
-                <div class="ftd-card-header">Speed per vehicle <span class="ftd-unit">km/h</span></div>
-                <canvas id="speedChart" class="ftd-canvas"/>
-            </div>
-
-            <div class="ftd-card ftd-chart-card">
-                <div class="ftd-card-header">Fuel level <span class="ftd-unit">%</span></div>
-                <canvas id="fuelChart" class="ftd-canvas"/>
-            </div>
-
-            <div class="ftd-card ftd-chart-card ftd-chart-card--sm">
-                <div class="ftd-card-header">Ignition</div>
-                <canvas id="ignChart" class="ftd-canvas"/>
-                <div class="ftd-ign-legend">
-                    <span class="ftd-dot ftd-dot--green"/>
-                    <span><t t-esc="state.ignitionOn"/> on</span>
-                    <span class="ftd-dot ftd-dot--slate"/>
-                    <span><t t-esc="state.ignitionOff"/> off</span>
-                </div>
-            </div>
-
-        </div>
-
-        <!-- ── Map + Alerts row ───────────────────────────────────────── -->
-        <div class="ftd-row ftd-row--main">
-
-            <!-- Map -->
-            <div class="ftd-card ftd-map-card">
-                <div class="ftd-card-header">Vehicle locations
-                    <span class="ftd-map-hint">Click a marker to view details</span>
-                </div>
-                <div id="fleetMap" class="ftd-map"/>
-            </div>
-
-            <!-- Live alert feed -->
-            <div class="ftd-card ftd-alerts-card">
-                <div class="ftd-card-header">
-                    Recent alerts
-                    <span t-if="state.alerts.length" class="ftd-badge ftd-badge--count">
-                        <t t-esc="state.alerts.length"/>
-                    </span>
-                </div>
-                <div class="ftd-alerts-list">
-                    <t t-if="!state.alerts.length">
-                        <div class="ftd-empty">No alerts</div>
-                    </t>
-                    <t t-foreach="state.alerts.slice(0,15)" t-as="alert" t-key="alert.id || alert_index">
-                        <div t-attf-class="ftd-alert-row ftd-alert-row--{{(alert.severity || 'info').toLowerCase()}}">
-                            <div class="ftd-alert-sev"><t t-esc="alert.severity || 'INFO'"/></div>
-                            <div class="ftd-alert-body">
-                                <div class="ftd-alert-type"><t t-esc="alert.alert_type"/></div>
-                                <div class="ftd-alert-meta">
-                                    <t t-esc="alert.device_id ? alert.device_id.slice(-12) : ''"/>
-                                    <t t-if="alert.timestamp"> · <t t-esc="new Date(alert.timestamp).toLocaleTimeString()"/></t>
-                                </div>
-                            </div>
-                        </div>
-                    </t>
-                </div>
-            </div>
-
-        </div>
-
-        <!-- ── Vehicle table ──────────────────────────────────────────── -->
-        <div class="ftd-card ftd-table-card">
-            <div class="ftd-card-header">
-                Fleet status
-                <span class="ftd-table-count"><t t-esc="state.vehicles.length"/> vehicles</span>
-                <span class="ftd-map-hint" style="margin-left:auto">Click a row to view details</span>
-            </div>
-            <div class="ftd-table-wrap">
-                <table class="ftd-table">
-                    <thead>
-                        <tr>
-                            <th>Device</th>
-                            <th>Status</th>
-                            <th>Speed</th>
-                            <th>Fuel</th>
-                            <th>Odometer</th>
-                            <th>Voltage</th>
-                            <th>GSM</th>
-                            <th>Updated</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <t t-foreach="state.vehicles" t-as="v" t-key="v.device_id">
-                            <tr t-attf-class="ftd-tr--clickable {{v.stale ? 'ftd-tr--stale' : ''}}"
-                                t-on-click="() => openTableRowDrawer(v)">
-                                <td class="ftd-td-id">
-                                    <span class="ftd-device-badge"><t t-esc="v.device_id"/></span>
-                                </td>
-                                <td>
-                                    <span t-if="v.ignition and v.movement" class="ftd-status ftd-status--moving">Moving</span>
-                                    <span t-elif="v.ignition" class="ftd-status ftd-status--idle">Idle</span>
-                                    <span t-else="" class="ftd-status ftd-status--off">Off</span>
-                                </td>
-                                <td class="ftd-td-num">
-                                    <t t-esc="v.speed != null ? v.speed.toFixed(0) + ' km/h' : '—'"/>
-                                </td>
-                                <td>
-                                    <div class="ftd-fuel-bar-wrap">
-                                        <div class="ftd-fuel-bar-bg">
-                                            <div t-attf-class="ftd-fuel-bar-fill {{v.fuel_level != null and v.fuel_level &lt; 15 ? 'ftd-fuel-bar-fill--low' : v.fuel_level != null and v.fuel_level &lt; 30 ? 'ftd-fuel-bar-fill--mid' : 'ftd-fuel-bar-fill--ok'}}"
-                                                 t-attf-style="width:{{v.fuel_level != null ? v.fuel_level : 0}}%"/>
-                                        </div>
-                                        <span class="ftd-fuel-label">
-                                            <t t-esc="v.fuel_level != null ? v.fuel_level.toFixed(1) + '%' : '—'"/>
-                                        </span>
-                                    </div>
-                                </td>
-                                <td class="ftd-td-num">
-                                    <t t-esc="v.odometer != null ? (v.odometer/1000).toFixed(0) + ' km' : '—'"/>
-                                </td>
-                                <td class="ftd-td-num">
-                                    <t t-esc="v.ext_voltage != null ? v.ext_voltage.toFixed(1) + ' V' : '—'"/>
-                                </td>
-                                <td>
-                                    <t t-if="v.gsm_signal != null">
-                                        <span class="ftd-signal-bars">
-                                            <t t-foreach="[1,2,3,4,5]" t-as="bar" t-key="bar">
-                                                <span t-attf-class="ftd-bar {{bar &lt;= v.gsm_signal ? 'ftd-bar--active' : ''}}"/>
-                                            </t>
-                                        </span>
-                                    </t>
-                                    <t t-else="">—</t>
-                                </td>
-                                <td class="ftd-td-age">
-                                    <t t-esc="v.age_seconds != null ? (v.age_seconds &lt; 60 ? v.age_seconds + 's' : Math.floor(v.age_seconds/60) + 'm') + ' ago' : '—'"/>
-                                </td>
-                            </tr>
-                        </t>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ── Vehicle detail drawer ──────────────────────────────────── -->
-        <t t-if="state.drawerOpen and state.drawerVehicle">
-            <!-- Backdrop -->
-            <div class="ftd-drawer-backdrop" t-on-click="closeDrawer"/>
-            <!-- Panel -->
-            <div class="ftd-drawer">
-                <div class="ftd-drawer-header">
-                    <div class="ftd-drawer-title">
-                        <span class="ftd-device-badge ftd-device-badge--lg">
-                            <t t-esc="state.drawerVehicle.device_id"/>
-                        </span>
-                        <t t-set="dv" t-value="state.drawerVehicle"/>
-                        <span t-if="dv.ignition and dv.movement" class="ftd-status ftd-status--moving">Moving</span>
-                        <span t-elif="dv.ignition" class="ftd-status ftd-status--idle">Idle</span>
-                        <span t-else="" class="ftd-status ftd-status--off">Off</span>
-                    </div>
-                    <button class="ftd-drawer-close" t-on-click="closeDrawer">✕</button>
-                </div>
-
-                <div class="ftd-drawer-body">
-                    <t t-set="f" t-value="drawerFmt(state.drawerVehicle)"/>
-
-                    <!-- Primary metrics -->
-                    <div class="ftd-drawer-section-title">Current Telemetry</div>
-                    <div class="ftd-drawer-grid">
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Speed</div>
-                            <div class="ftd-drawer-cell-value ftd-drawer-cell-value--accent"><t t-esc="f.speed"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Ignition</div>
-                            <div t-attf-class="ftd-drawer-cell-value {{state.drawerVehicle.ignition ? 'ftd-drawer-cell-value--green' : 'ftd-drawer-cell-value--red'}}">
-                                <t t-esc="f.ignition"/>
-                            </div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Fuel Level</div>
-                            <div t-attf-class="ftd-drawer-cell-value {{state.drawerVehicle.fuel_level != null and state.drawerVehicle.fuel_level &lt; 15 ? 'ftd-drawer-cell-value--red' : state.drawerVehicle.fuel_level != null and state.drawerVehicle.fuel_level &lt; 30 ? 'ftd-drawer-cell-value--amber' : ''}}">
-                                <t t-esc="f.fuel"/>
-                            </div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Odometer</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.odometer"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Trip Odometer</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.tripOdo"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Movement</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.movement"/></div>
-                        </div>
-                    </div>
-
-                    <!-- GPS -->
-                    <div class="ftd-drawer-section-title">GPS Position</div>
-                    <div class="ftd-drawer-grid">
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Latitude</div>
-                            <div class="ftd-drawer-cell-value ftd-drawer-cell-value--mono"><t t-esc="f.lat"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Longitude</div>
-                            <div class="ftd-drawer-cell-value ftd-drawer-cell-value--mono"><t t-esc="f.lng"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Bearing</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.bearing"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">GNSS HDOP</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.gnssHdop"/></div>
-                        </div>
-                    </div>
-
-                    <!-- Power -->
-                    <div class="ftd-drawer-section-title">Power &amp; Signal</div>
-                    <div class="ftd-drawer-grid">
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Ext Voltage</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.extVoltage"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Bat Voltage</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.batVoltage"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Bat Level</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.batLevel"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">GSM Signal</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.gsm"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Network</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.networkType"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Eco Score</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.eco"/></div>
-                        </div>
-                    </div>
-
-                    <!-- Meta -->
-                    <div class="ftd-drawer-section-title">Status</div>
-                    <div class="ftd-drawer-grid">
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Last Update</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.timestamp"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Age</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.age"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Buffered</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.buffered"/></div>
-                        </div>
-                        <div class="ftd-drawer-cell">
-                            <div class="ftd-drawer-cell-label">Stale</div>
-                            <div class="ftd-drawer-cell-value"><t t-esc="f.stale"/></div>
-                        </div>
-                    </div>
-                </div><!-- /drawer-body -->
-            </div><!-- /drawer -->
-        </t>
-
-    </t><!-- /t-else loading -->
+  </div><!-- /ftd-wrap -->
+  </t><!-- /t-else loading -->
 
 </div><!-- /o_fleet_dashboard -->
 </t>

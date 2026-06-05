@@ -49,10 +49,10 @@ function fmtAge(s)    {
 function shortId(id)  { return id ? id.slice(-8) : "?"; }
 
 function fuelBarColor(pct) {
-    if (pct == null) return "#cbd5e1";
+    if (pct == null) return "rgba(255,255,255,.1)";
     if (pct < 15)   return "#ef4444";
     if (pct < 30)   return "#f59e0b";
-    return "#10b981";
+    return "#22c55e";
 }
 
 // ─── Chart management ─────────────────────────────────────────────────────────
@@ -99,9 +99,14 @@ class FleetMap {
         if (!el || this._initialized || typeof L === "undefined") return;
         if (el._leafletMap) { el._leafletMap.remove(); el._leafletMap = null; }
         this._map = L.map(el, { zoomControl: true, attributionControl: false });
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "© OpenStreetMap",
+
+        // Dark map tiles — CartoDB Dark Matter looks premium
+        L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+            attribution: "© OpenStreetMap © CartoDB",
+            subdomains: "abcd",
+            maxZoom: 20,
         }).addTo(this._map);
+
         // Use marker clustering if the plugin is loaded
         if (typeof L.markerClusterGroup === "function") {
             this._cluster = L.markerClusterGroup({ maxClusterRadius: 48, disableClusteringAtZoom: 16 });
@@ -130,27 +135,60 @@ class FleetMap {
         if (!this._map) return;
         const seen = new Set();
 
+        // Show demo markers if no real vehicles with GPS
+        const hasGps = vehicles.some(v => v.lat != null && v.lng != null);
+        if (!hasGps && vehicles.length === 0) {
+            // Place a single demo marker so map isn't blank
+            if (!this._demoMarker) {
+                const demoLatLng = [36.8065, 10.1815];
+                this._demoMarker = L.circleMarker(demoLatLng, {
+                    radius: 10, color: "#3b82f6", fillColor: "#3b82f6",
+                    fillOpacity: .4, weight: 2, dashArray: "4 3",
+                });
+                this._demoMarker.addTo(this._map);
+                this._map.setView(demoLatLng, 12);
+            }
+            return;
+        }
+        if (this._demoMarker) {
+            this._demoMarker.remove();
+            this._demoMarker = null;
+        }
+
         for (const v of vehicles) {
             if (v.lat == null || v.lng == null) continue;
             seen.add(v.device_id);
-            const color = v.ignition ? "#10b981" : "#94a3b8";
-            const pulse = v.movement ? 1.4 : 1;
+
+            const isMoving   = v.movement && v.ignition;
+            const isOnline   = v.ignition && !v.stale;
+            const color      = isMoving ? "#3b82f6" : isOnline ? "#22c55e" : "#4d6482";
+            const glowColor  = isMoving ? "rgba(59,130,246,.5)" : isOnline ? "rgba(34,197,94,.5)" : "rgba(77,100,130,.3)";
+
+            // Custom DivIcon — looks like a proper fleet platform marker
+            const icon = L.divIcon({
+                className: "",
+                html: `<div style="
+                    width:34px;height:34px;border-radius:50%;
+                    background:${color}22;border:2px solid ${color};
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:15px;
+                    box-shadow:0 0 12px ${glowColor}, 0 0 24px ${glowColor};
+                    transition:all .3s ease;
+                ">🚛</div>`,
+                iconSize: [34, 34],
+                iconAnchor: [17, 17],
+            });
 
             if (this._markers.has(v.device_id)) {
                 const m = this._markers.get(v.device_id);
                 m.setLatLng([v.lat, v.lng]);
-                m.setStyle({ color, fillColor: color });
-                // Keep latest vehicle data on marker for click handler
+                m.setIcon(icon);
                 m._vehicleData = v;
             } else {
-                const m = L.circleMarker([v.lat, v.lng], {
-                    radius: 9 * pulse, color, fillColor: color,
-                    fillOpacity: 0.85, weight: 2,
-                });
+                const m = L.marker([v.lat, v.lng], { icon });
                 m._vehicleData = v;
 
                 if (this._onMarkerClick) {
-                    // Click opens the vehicle drawer
                     m.on("click", () => this._onMarkerClick(m._vehicleData));
                 } else {
                     m.bindPopup(() => this._popupContent(m._vehicleData));
@@ -173,7 +211,7 @@ class FleetMap {
         if (!this._fitted && seen.size > 0) {
             const points = vehicles.filter(v => v.lat && v.lng).map(v => [v.lat, v.lng]);
             if (points.length) {
-                this._map.fitBounds(points, { padding: [32, 32] });
+                this._map.fitBounds(points, { padding: [48, 48] });
                 this._fitted = true;
             }
         }
@@ -189,10 +227,13 @@ class FleetMap {
             ["Battery",  fmtVolt(v.ext_voltage)],
             ["Updated",  fmtAge(v.age_seconds)],
         ];
-        return `<div style="font-size:12px;min-width:160px">
-          <div style="font-weight:700;font-size:13px;margin-bottom:6px">${v.device_id}</div>
+        return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;font-size:12px;min-width:180px;padding:2px 0">
+          <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#f0f4ff;font-family:'SF Mono','Fira Code',monospace">${v.device_id}</div>
           <table style="width:100%;border-collapse:collapse">${rows.map(([k,val]) =>
-            `<tr><td style="color:#64748b;padding:1px 4px">${k}</td><td style="font-weight:500;padding:1px 4px">${val}</td></tr>`
+            `<tr>
+              <td style="color:#4d6482;padding:2px 0;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600">${k}</td>
+              <td style="font-weight:600;padding:2px 0 2px 8px;color:#8fa3bf;text-align:right">${val}</td>
+            </tr>`
           ).join("")}</table>
         </div>`;
     }
@@ -501,22 +542,50 @@ class FleetTelemetryDashboard extends Component {
     _initCharts() {
         if (typeof Chart === "undefined") return;
 
+        const darkGrid  = "rgba(255,255,255,.05)";
+        const darkTick  = { color: "#4d6482", font: { size: 10, family: "Inter, sans-serif" } };
+
         this._speedChart = getOrCreateChart("speedChart", {
             type: "bar",
-            data: { labels: [], datasets: [{ label: "Speed (km/h)", data: [], backgroundColor: "#818cf8", borderRadius: 5, borderSkipped: false }] },
-            options: { responsive: true, animation: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: "#f1f5f9" } }, x: { ticks: { font: { size: 10 } }, grid: { display: false } } } },
+            data: { labels: [], datasets: [{ label: "Speed (km/h)", data: [], backgroundColor: "rgba(59,130,246,.7)", borderRadius: 4, borderSkipped: false }] },
+            options: {
+                responsive: true, animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: darkGrid }, ticks: darkTick, border: { color: "transparent" } },
+                    x: { grid: { display: false }, ticks: darkTick, border: { color: "transparent" } },
+                },
+            },
         });
 
         this._fuelChart = getOrCreateChart("fuelChart", {
             type: "bar",
-            data: { labels: [], datasets: [{ label: "Fuel %", data: [], backgroundColor: [], borderRadius: 5, borderSkipped: false }] },
-            options: { responsive: true, animation: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100, grid: { color: "#f1f5f9" } }, x: { ticks: { font: { size: 10 } }, grid: { display: false } } } },
+            data: { labels: [], datasets: [{ label: "Fuel %", data: [], backgroundColor: [], borderRadius: 4, borderSkipped: false }] },
+            options: {
+                responsive: true, animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, max: 100, grid: { color: darkGrid }, ticks: darkTick, border: { color: "transparent" } },
+                    x: { grid: { display: false }, ticks: darkTick, border: { color: "transparent" } },
+                },
+            },
         });
 
         this._ignChart = getOrCreateChart("ignChart", {
             type: "doughnut",
-            data: { labels: ["On", "Off"], datasets: [{ data: [0, 0], backgroundColor: ["#10b981", "#e2e8f0"], borderWidth: 0, hoverOffset: 4 }] },
-            options: { responsive: true, animation: false, cutout: "72%", plugins: { legend: { position: "bottom", labels: { font: { size: 11 }, padding: 12 } } } },
+            data: {
+                labels: ["On", "Off"],
+                datasets: [{ data: [0, 0], backgroundColor: ["#22c55e", "rgba(255,255,255,.08)"], borderWidth: 0, hoverOffset: 4 }],
+            },
+            options: {
+                responsive: true, animation: false, cutout: "74%",
+                plugins: {
+                    legend: {
+                        position: "bottom",
+                        labels: { color: "#4d6482", font: { size: 11, family: "Inter, sans-serif" }, padding: 14 },
+                    },
+                },
+            },
         });
     }
 
@@ -550,6 +619,13 @@ class FleetTelemetryDashboard extends Component {
     openTableRowDrawer(vehicle) {
         this.openDrawer(vehicle);
     }
+
+    // Expose format helpers to OWL template
+    fmtSpeed(v)  { return fmtSpeed(v); }
+    fmtOdo(v)    { return fmtOdo(v); }
+    fmtFuel(v)   { return fmtFuel(v); }
+    fmtVolt(v)   { return fmtVolt(v); }
+    fmtAge(v)    { return fmtAge(v); }
 
     // Formatted getters for drawer (delegate to format helpers)
     drawerFmt(v) {
