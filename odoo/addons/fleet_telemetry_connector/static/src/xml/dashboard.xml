@@ -293,7 +293,7 @@
             <!-- Real vehicle rows -->
             <t t-foreach="state.vehicles" t-as="v" t-key="v.device_id">
               <tr t-attf-class="ftd-tr--clickable {{v.stale ? 'ftd-tr--stale' : ''}}"
-                  t-on-click="() => openTableRowDrawer(v)">
+                  t-on-click="openTableRowDrawer(v)">
                 <td class="ftd-td-id">
                   <span class="ftd-device-badge">
                     <span class="ftd-dot ftd-dot--green" t-if="v.ignition and !v.stale"/>

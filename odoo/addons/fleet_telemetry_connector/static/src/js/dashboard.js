@@ -98,13 +98,12 @@ class FleetMap {
         const el = document.getElementById(this._id);
         if (!el || this._initialized || typeof L === "undefined") return;
         if (el._leafletMap) { el._leafletMap.remove(); el._leafletMap = null; }
-        this._map = L.map(el, { zoomControl: true, attributionControl: false });
+        this._map = L.map(el, { zoomControl: true, attributionControl: true });
 
-        // Dark map tiles — CartoDB Dark Matter looks premium
-        L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-            attribution: "© OpenStreetMap © CartoDB",
-            subdomains: "abcd",
-            maxZoom: 20,
+        // Use OSM tiles — reliable for demos without network restrictions
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "© OpenStreetMap contributors",
+            maxZoom: 19,
         }).addTo(this._map);
 
         // Use marker clustering if the plugin is loaded
@@ -114,6 +113,11 @@ class FleetMap {
         }
         el._leafletMap = this._map;
         this._initialized = true;
+
+        // Leaflet needs the container to be fully painted before it measures size.
+        // Without invalidateSize() the map renders blank in Odoo's flex layout.
+        setTimeout(() => { if (this._map) this._map.invalidateSize(); }, 100);
+        setTimeout(() => { if (this._map) this._map.invalidateSize(); }, 500);
     }
 
     destroy() {
@@ -621,7 +625,6 @@ class FleetTelemetryDashboard extends Component {
     }
 
     // Expose format helpers to OWL template
-    fmtSpeed(v)  { return fmtSpeed(v); }
     fmtOdo(v)    { return fmtOdo(v); }
     fmtFuel(v)   { return fmtFuel(v); }
     fmtVolt(v)   { return fmtVolt(v); }

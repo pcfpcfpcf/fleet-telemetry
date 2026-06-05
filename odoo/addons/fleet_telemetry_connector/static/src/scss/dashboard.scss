@@ -39,12 +39,21 @@ $rx:     4px;
 $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 // ── Odoo wrapper reset ────────────────────────────────────────────────────────
+// Ensure the Odoo action/view containers don't clip our content
+.o_action_manager > .o_action,
+.o_view_controller {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
 // Only scope our dark styles inside the dashboard container
 .o_fleet_dashboard {
   background: $bg1;
   min-height: 100vh;
   font-family: $font;
   color: $t1;
+  overflow-y: auto;
+  overflow-x: hidden;
 
   *, *::before, *::after {
     box-sizing: border-box;
@@ -221,7 +230,7 @@ $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   .ftd-map-card {
     border: 1px solid $b1;
     border-radius: $r;
-    overflow: hidden;
+    overflow: visible;   /* MUST be visible — overflow:hidden kills Leaflet tiles */
     background: $bg0;
     display: flex;
     flex-direction: column;
@@ -234,6 +243,7 @@ $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: linear-gradient(90deg, transparent, $blue, transparent);
       opacity: .5;
       pointer-events: none;
+      z-index: 1;
     }
   }
 
@@ -255,6 +265,9 @@ $font:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     display: block !important;
     background: $bg0;
     flex-shrink: 0;
+    border-radius: 0;
+    // Clip the map tiles to the card — done here not on parent to avoid breaking Leaflet
+    overflow: hidden;
   }
 
   .ftd-map-legend {
