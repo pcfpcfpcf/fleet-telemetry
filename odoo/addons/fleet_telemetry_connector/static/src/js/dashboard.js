@@ -135,6 +135,13 @@ class FleetMap {
     // Returns the layer to add markers to (cluster group or map directly)
     _layer() { return this._cluster || this._map; }
 
+    // Force Leaflet to re-measure its container — call after any layout shift
+    invalidate() {
+        if (this._map) {
+            this._map.invalidateSize({ animate: false });
+        }
+    }
+
     updateVehicles(vehicles) {
         if (!this._map) return;
         const seen = new Set();
@@ -293,6 +300,11 @@ class FleetTelemetryDashboard extends Component {
             setTimeout(() => {
                 if (this.state.loading) this._fetchSnapshot();
             }, 2000);
+            // Leaflet needs multiple invalidateSize calls because Odoo's
+            // view transitions complete asynchronously after onMounted fires
+            setTimeout(() => { this._fleetMap.invalidate(); }, 200);
+            setTimeout(() => { this._fleetMap.invalidate(); }, 800);
+            setTimeout(() => { this._fleetMap.invalidate(); }, 2000);
         });
 
         onWillUnmount(() => {
@@ -618,6 +630,8 @@ class FleetTelemetryDashboard extends Component {
     closeDrawer() {
         this.state.drawerOpen = false;
         this.state.drawerVehicle = null;
+        // Re-trigger map size calculation after drawer slides out
+        setTimeout(() => { this._fleetMap.invalidate(); }, 300);
     }
 
     openTableRowDrawer(vehicle) {
